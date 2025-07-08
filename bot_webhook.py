@@ -4,6 +4,7 @@ import random
 import string
 import asyncio
 import warnings
+import io # لاستخدام BytesIO لإنشاء ملفات في الذاكرة
 
 # Suppress the PTBUserWarning
 warnings.filterwarnings(
@@ -13,7 +14,7 @@ warnings.filterwarnings(
     module="telegram.ext.conversationhandler"
 )
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.error import BadRequest
 from telegram.ext import (
     ApplicationBuilder,
@@ -54,6 +55,16 @@ def get_stop_and_back_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# --- Result Screen Buttons Helper (جديد) ---
+def get_result_screen_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("⬇️ Download Available Names", callback_data='download_available')],
+        [InlineKeyboardButton("⬇️ Download All Checked Names", callback_data='download_all_checked')],
+        [InlineKeyboardButton("⬅️ Back", callback_data='back')],
+        [InlineKeyboardButton("🛑 Stop", callback_data='stop')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 
 # Start command handler
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,7 +77,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == 'generate':
-        # تم تعديل رسالة الطلب لتوضح طريقة عمل النمط بـ 'x' كـ placeholder
         await query.edit_message_text("How many names would you like to generate and check (1-100)?", reply_markup=get_stop_and_back_keyboard())
         return ASK_COUNT
     elif query.data == 'bulk':
@@ -77,7 +87,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "**How RipperTek Bot Works:**\n\n"
             "This bot helps you find available Telegram usernames. "
             "You can either:\n\n"
-            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_x_x_x` (where 'x' is a placeholder that will be replaced by random letters/digits). The bot will generate variations and check their availability.\n\n" # تم تحديث الشرح لـ 'x'
+            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_x_x_x` (where 'x' is a placeholder that will be replaced by random letters/digits). The bot will generate variations and check their availability.\n\n"
             "2. **Bulk Check List:** Send a list of usernames (one per line) and the bot will check each one for availability.\n\n"
             "**Aim:** To simplify the process of finding unique and unused Telegram usernames for your channels, groups, or personal profiles.\n\n"
             "**Note:** Username availability checks are based on Telegram's API behavior (attempting to get chat info). While generally accurate, there might be edge cases (e.g., private channels) that affect results.",
@@ -85,6 +95,25 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_stop_and_back_keyboard()
         )
         return HOW_TO_INFO
+    elif query.data == 'download_available': # جديد: تحميل الأسماء المتاحة
+        if 'last_available_names' in context.user_data and context.user_data['last_available_names']:
+            await send_names_as_file(query.message.chat_id, context.user_data['last_available_names'], "available_usernames.txt")
+        else:
+            await query.message.reply_text("No available names found from your last search.")
+        return ConversationHandler.END # يمكن أن يعود إلى INITIAL_MENU أو يبقى في نفس الحالة
+
+    elif query.data == 'download_all_checked': # جديد: تحميل كل الأسماء التي تم فحصها
+        if 'last_all_checked_results' in context.user_data and context.user_data['last_all_checked_results']:
+            # تنسيق كل النتائج لتضمين الحالة (متاح/غير متاح)
+            formatted_results = []
+            for item in context.user_data['last_all_checked_results']:
+                status = "Available" if item['available'] else "Taken"
+                formatted_results.append(f"{item['username']} ({status})")
+            await send_names_as_file(query.message.chat_id, formatted_results, "all_checked_usernames.txt")
+        else:
+            await query.message.reply_text("No names found from your last search to download.")
+        return ConversationHandler.END # يمكن أن يعود إلى INITIAL_MENU أو يبقى في نفس الحالة
+
     elif query.data == 'back' or query.data == 'stop':
         await query.edit_message_text(
             "Welcome to RipperTek Bot. Please choose:",
@@ -103,7 +132,6 @@ async def handle_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return ASK_COUNT
         
         context.user_data['num_to_generate_display'] = count
-        # تم تعديل رسالة الطلب لـ 'x' كـ placeholder
         await update.message.reply_text("Send a sample pattern (e.g., `user_x_x_x` where 'x' is replaced by random chars/digits):", parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard())
         return ASK_PATTERN
     except ValueError:
@@ -111,21 +139,28 @@ async def handle_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ASK_COUNT
 
 
-# Username generator logic (تم تعديل هذا الجزء لاستخدام 'x' كـ placeholder)
+# Username generator logic
 def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[str]:
     letters = string.ascii_lowercase + string.digits
     generated = set()
     attempts = 0
     max_attempts = num_variations_to_try * 5
     
-    PLACEHOLDER_CHAR = 'x' # <--- تم تعريف الـ placeholder هنا
+    PLACEHOLDER_CHAR = 'x'
 
     while len(generated) < num_variations_to_try and attempts < max_attempts:
         uname_chars = list(pattern)
         
+        # Ensure first character is not a digit if it's a placeholder
+        if uname_chars and uname_chars[0] == PLACEHOLDER_CHAR:
+            uname_chars[0] = random.choice(string.ascii_lowercase) # Only letters for the first char
+        
         for i in range(len(uname_chars)):
-            if uname_chars[i] == PLACEHOLDER_CHAR: # <--- تم التعديل للاستبدال فقط إذا كان الحرف هو 'x'
+            if uname_chars[i] == PLACEHOLDER_CHAR and i != 0: # Placeholders after first char can be letters or digits
                 uname_chars[i] = random.choice(letters)
+            elif uname_chars[i] == PLACEHOLDER_CHAR and i == 0: # Ensure first char is handled
+                 # Already handled above, this is for clarity
+                 pass
         
         final_uname = "".join(uname_chars)
 
@@ -186,22 +221,26 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
     available_names = [r['username'] for r in all_results if r['available']]
     taken_names = [r['username'] for r in all_results if not r['available']]
 
-    # بناء رسالة النتيجة
+    # حفظ النتائج في user_data لأزرار التحميل
+    context.user_data['last_available_names'] = available_names
+    context.user_data['last_all_checked_results'] = all_results
+
+    # بناء رسالة النتيجة (تنسيق لسهولة النسخ)
     text_parts = [f"Checked {len(all_results)} variations for pattern '{pattern}'.\n"]
 
     if available_names:
         text_parts.append(f"✅ Available ({len(available_names)}):")
-        text_parts.append("\n".join(available_names[:num_to_display]))
+        # استخدام التنسيق ` `@name` ` لجعلها سهلة النسخ
+        text_parts.append("\n".join([f"`@{name}`" for name in available_names[:num_to_display]]))
         if len(available_names) > num_to_display:
             text_parts.append(f"...and {len(available_names) - num_to_display} more available names.")
     else:
         text_parts.append("😔 No available usernames found among the generated ones.")
 
-    # عرض الأسماء غير المتاحة (عدد محدود لتجنب رسائل طويلة جداً)
     if taken_names:
-        MAX_TAKEN_TO_DISPLAY = 20
+        MAX_TAKEN_TO_DISPLAY = 20 # حد لعدد الأسماء غير المتاحة المعروضة
         text_parts.append(f"\n❌ Taken ({len(taken_names)}):")
-        text_parts.append("\n".join(taken_names[:MAX_TAKEN_TO_DISPLAY]))
+        text_parts.append("\n".join([f"`@{name}`" for name in taken_names[:MAX_TAKEN_TO_DISPLAY]]))
         if len(taken_names) > MAX_TAKEN_TO_DISPLAY:
             text_parts.append(f"...and {len(taken_names) - MAX_TAKEN_TO_DISPLAY} more taken names.")
     else:
@@ -218,7 +257,7 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_text += "\nTry a smaller generation count for full list display, or use Bulk Check for specific lists."
 
 
-    await update.message.reply_text(final_text, reply_markup=get_stop_and_back_keyboard())
+    await update.message.reply_text(final_text, parse_mode='Markdown', reply_markup=get_result_screen_keyboard()) # تم تغيير لوحة المفاتيح
     return INITIAL_MENU
 
 # Handle bulk checking request
@@ -239,23 +278,25 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     available_names = [r['username'] for r in all_results if r['available']]
     taken_names = [r['username'] for r in all_results if not r['available']]
 
-    # بناء رسالة النتيجة
+    # حفظ النتائج في user_data لأزرار التحميل
+    context.user_data['last_available_names'] = available_names
+    context.user_data['last_all_checked_results'] = all_results
+
+    # بناء رسالة النتيجة (تنسيق لسهولة النسخ)
     text_parts = [f"Checked {len(all_results)} usernames from your list.\n"]
 
     if available_names:
         text_parts.append(f"✅ Available ({len(available_names)}):")
-        text_parts.append("\n".join(available_names))
+        text_parts.append("\n".join([f"`@{name}`" for name in available_names]))
     else:
         text_parts.append("😔 None of the provided usernames are available.")
 
     if taken_names:
         MAX_TAKEN_TO_DISPLAY = 20
         text_parts.append(f"\n❌ Taken ({len(taken_names)}):")
-        text_parts.append("\n".join(taken_names[:MAX_TAKEN_TO_DISPLAY]))
+        text_parts.append("\n".join([f"`@{name}`" for name in taken_names[:MAX_TAKEN_TO_DISPLAY]]))
         if len(taken_names) > MAX_TAKEN_TO_DISPLAY:
             text_parts.append(f"...and {len(taken_names) - MAX_TAKEN_TO_DISPLAY} more taken names.")
-        else:
-            text_parts.append("\n".join(taken_names))
     else:
         text_parts.append("\n🎉 All provided usernames were found available! (Unlikely for large numbers)")
 
@@ -268,13 +309,28 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_text += f"❌ Taken: {len(taken_names)}\n"
         final_text += "\nConsider smaller lists for full display."
 
-    await update.message.reply_text(final_text, reply_markup=get_stop_and_back_keyboard())
+    await update.message.reply_text(final_text, parse_mode='Markdown', reply_markup=get_result_screen_keyboard()) # تم تغيير لوحة المفاتيح
     return INITIAL_MENU
 
 # Cancel command handler
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Operation cancelled. Type /start to begin again.", reply_markup=get_main_menu_keyboard())
     return ConversationHandler.END
+
+# Helper function to send a list of names as a text file
+async def send_names_as_file(chat_id: int, names_list: list[str], filename: str):
+    if not names_list:
+        await context.bot.send_message(chat_id=chat_id, text=f"No names to save in {filename}.")
+        return
+
+    file_content = "\n".join(names_list)
+    # استخدام io.BytesIO لإنشاء ملف في الذاكرة
+    file_stream = io.BytesIO(file_content.encode('utf-8'))
+    file_stream.name = filename # تحديد اسم للملف
+
+    await context.bot.send_document(chat_id=chat_id, document=InputFile(file_stream))
+    logger.info(f"Sent {filename} to chat {chat_id}")
+
 
 # Main application setup and run
 if __name__ == '__main__':
@@ -305,7 +361,7 @@ if __name__ == '__main__':
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
-            CallbackQueryHandler(button, pattern="^back$|^stop$")
+            CallbackQueryHandler(button, pattern="^back$|^stop$|^download_available$|^download_all_checked$") # أضف أزرار التحميل هنا أيضاً كـ fallbacks
         ],
         per_message=False
     )
