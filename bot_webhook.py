@@ -53,7 +53,7 @@ translations = {
         'language_set': "Language set to English.",
         'how_many_names': "How many names would you like to generate and check (1-500)?",
         'invalid_number': "Please enter a number between 1 and 500.",
-        'send_pattern': "Send a sample pattern (e.g., `user_x_x_x` where 'x' is replaced by random chars/digits). For fixed parts, enclose them in double quotes (e.g., `\"my_name\"_x`):",
+        'send_pattern': "Send a sample pattern (e.g., `user_x_x_x` where 'x' is replaced by random chars/digits). Use double quotes `\"\"` for fixed parts (e.g., `\"my_name\"_x`):",
         'invalid_pattern': "Please provide a valid pattern.",
         'ask_delay': "Enter a delay between checks in seconds (e.g., 0.1 for 100ms, 1 for 1s). Enter 0 for no additional delay:",
         'invalid_delay': "Please enter a valid number for delay (e.g., 0.1, 1, 5).",
@@ -251,8 +251,7 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
         display_available = format_names_for_display(available_names_info)
         text_parts.append("\n".join(display_available))
         if len(available_names_info) > context.user_data.get('num_to_generate_display', len(available_names_info)):
-            # This is the line where the missing parenthesis was suspected
-            text_parts.append(f"...and {len(available_names_info) - context.user_data.get('num_to_generate_display', len(available_names_info))} more available names.") # Corrected
+            text_parts.append(f"...and {len(available_names_info) - context.user_data.get('num_to_generate_display', len(available_names_info))} more available names.")
     else:
         text_parts.append(get_text(context, 'no_available_names'))
 
@@ -381,7 +380,7 @@ async def handle_pattern_input(update: Update, context: ContextTypes.DEFAULT_TYP
     return ASK_DELAY
 
 # Handler for delay input (This handler now directly initiates the main processing loop)
-async def handle_delay_input(update: Update, Context: ContextTypes.DEFAULT_TYPE): # Corrected Context -> ContextTypes
+async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE): # Corrected 'Context' to 'context'
     try:
         delay = float(update.message.text.strip())
         if delay < 0:
