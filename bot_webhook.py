@@ -16,7 +16,7 @@ warnings.filterwarnings(
 )
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
-from telegram.error import BadRequest, TimedOut
+from telegram.error import BadRequest, TimedOut, RetryAfter
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -141,18 +141,16 @@ translations = {
             "**ملاحظة هامة حول الدقة:** يتم إجراء فحوصات توفر اسم المستخدم باستخدام واجهة برمجة تطبيقات بوت تيليجرام (على وجه التحديد، عن طريق محاولة استرداد معلومات الدردشة). بينما هذه الطريقة دقيقة بشكل عام لأسماء المستخدمين العامة، **قد لا تكون دقيقة بنسبة 100% في جميع الحالات.** قد تظهر بعض أسماء المستخدمين متاحة من خلال البوت ولكنها في الواقع محجوزة بواسطة كيانات خاصة أو أنواع معينة من الحسابات، بسبب قيود في ما يمكن لواجهات برمجة تطبيقات البوت فحصه. **تأكد دائماً من التوفر مباشرة على تيليجرام عند محاولة تعيين اسم مستخدم.**"
         ),
         'flood_wait_message': "❗️ تم إيقاف البوت مؤقتاً بسبب قيود تلغرام على الطلبات. سيعاود المحاولة بعد {retry_after} ثانية. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة.",
-        'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً.",
-        'found_available_immediate': "✅ عثر على اسم متاح: {username}"
+        'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً."
     }
 }
 
 # --- Constants for thresholds ---
-# These constants define the behavior for progress updates and username validation
-UPDATE_INTERVAL_SECONDS = 1 # How often to try updating the progress message (in seconds)
-UPDATE_INTERVAL_COUNT = 1   # How many names to check before trying to update progress message
-MIN_USERNAME_LENGTH = 5     # Minimum length for a valid Telegram username
-MAX_USERNAME_LENGTH = 32    # Maximum length for a valid Telegram username
-PLACEHOLDER_CHAR = 'x'      # The character used as a placeholder in patterns (e.g., user_x_x_x)
+UPDATE_INTERVAL_SECONDS = 1 
+UPDATE_INTERVAL_COUNT = 1   
+MIN_USERNAME_LENGTH = 5     
+MAX_USERNAME_LENGTH = 32    
+PLACEHOLDER_CHAR = 'x'      
 
 # --- Helper function to get translated text ---
 def get_text(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
@@ -203,11 +201,9 @@ def is_valid_username(username: str) -> bool:
 
 # Helper to validate patterns for generation (must contain 'x' or quoted part)
 def is_valid_pattern_for_generation(pattern: str) -> bool:
-    # A pattern is valid if it contains at least one 'x' or one quoted part.
-    # This regex checks for either: a quoted string OR an 'x' character.
     return bool(re.search(r'"[^"]*"|x', pattern))
 
-# Username generator logic (Updated with robust parsing logic)
+# Username generator logic (Corrected parsing logic)
 def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[str]:
     letters = string.ascii_lowercase + string.digits
     generated = set()
@@ -216,28 +212,21 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
     
     # --- Robust Pattern Parsing Logic ---
     parsed_pattern_parts = [] # This will store (type, content) tuples
-    i = 0
-    while i < len(pattern):
-        char = pattern[i]
-        
-        if char == '"':
-            # Quoted part
-            i += 1 # Skip opening quote
-            start = i
-            while i < len(pattern) and pattern[i] != '"':
-                i += 1
-            parsed_pattern_parts.append(('fixed', pattern[start:i]))
-            i += 1  # Skip closing quote
-        elif char == PLACEHOLDER_CHAR:
-            # Placeholder 'x'
+    
+    # This regex now correctly identifies quoted strings, 'x' placeholders, and any other literal text.
+    # Group 1: quoted string content (e.g., "my_name" -> "my_name")
+    # Group 2: literal 'x' character
+    # Group 3: any other sequence of characters not a quote or 'x'
+    regex_tokenizer = re.compile(r'"([^"]*)"|(x)|([^"x]+)')
+    
+    for match in regex_tokenizer.finditer(pattern):
+        if match.group(1) is not None: # It's a quoted string
+            parsed_pattern_parts.append(('fixed', match.group(1)))
+        elif match.group(2) is not None: # It's an 'x' placeholder
             parsed_pattern_parts.append(('placeholder', PLACEHOLDER_CHAR))
-            i += 1
-        else:
-            # Literal characters outside quotes and not a placeholder (e.g., 'X', 'o', 'r', 'b' in X"orb"x)
-            start = i
-            while i < len(pattern) and pattern[i] not in ['"', PLACEHOLDER_CHAR]:
-                i += 1
-            parsed_pattern_parts.append(('fixed', pattern[start:i]))
+        elif match.group(3) is not None: # It's a literal segment (e.g., "X", "orb" from X"orb"x)
+            parsed_pattern_parts.append(('fixed', match.group(3)))
+
     # --- End Robust Pattern Parsing Logic ---
 
     logger.info(f"Pattern parsed for generation: {parsed_pattern_parts}")
@@ -270,7 +259,7 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
     return list(generated)
 
 
-# Telegram API username availability checker (Corrected TimedOut exception handling)
+# Telegram API username availability checker
 async def check_username_availability(update: Update, context: ContextTypes.DEFAULT_TYPE, username: str) -> tuple[bool, str, str | None]:
     if not is_valid_username(username):
         logger.warning(f"Invalid username format (pre-API check): {username}")
@@ -284,7 +273,7 @@ async def check_username_availability(update: Update, context: ContextTypes.DEFA
             return False, username, f"https://t.me/{chat.username}"
         
         return False, username, None
-    except TimedOut as e: # Corrected: 'as e' is essential to access e.retry_after
+    except TimedOut as e:
         retry_after = e.retry_after
         logger.warning(f"FLOODWAIT: Hit flood control for @{username}. Retrying in {retry_after} seconds.")
         try:
@@ -302,7 +291,7 @@ async def check_username_availability(update: Update, context: ContextTypes.DEFA
             logger.info(f"Username @{username} is likely available.")
             return True, username, f"https://t.me/{username}"
         logger.error(f"Telegram API BadRequest: {e}")
-    except Exception as e: # General exception handler
+    except Exception as e:
         logger.error(f"Unexpected error checking username {username}: {e}")
     return False, username, None
 
@@ -364,8 +353,8 @@ async def process_check(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     usernames: list[str],
-    pattern: str = None, # Pattern for generated names
-    is_bulk: bool = False # Flag for bulk list
+    pattern: str = None, 
+    is_bulk: bool = False 
 ):
     all_results = []
     available_count = 0
@@ -377,8 +366,7 @@ async def process_check(
     progress_msg_id = None
 
     warning_text = ""
-    # Use pattern here for warning text for generated names
-    if (is_bulk and len(usernames) > 100) or (not is_bulk and len(usernames) > 100): 
+    if len(usernames) > 100: 
         warning_text = get_text(context, 'large_request_warning') + "\n\n"
 
     # Send initial progress message
@@ -391,7 +379,7 @@ async def process_check(
     context.user_data['progress_message_id'] = progress_msg_id
     context.user_data['stop_requested'] = False # Reset stop flag
 
-    check_delay = context.user_data.get('check_delay', 0.05) # Get delay
+    check_delay = context.user_data.get('check_delay', 0.05) # Get delay from user_data
 
     for i, uname in enumerate(usernames):
         if context.user_data.get('stop_requested'):
@@ -431,7 +419,7 @@ async def process_check(
                 )
                 last_update_time = current_time # Update timestamp only on successful edit
             except Exception as e:
-                logger.warning(f"Failed to update progress message: {e}") # Log error, but continue
+                logger.warning(f"Failed to update progress message: {e}")
 
 
         await asyncio.sleep(check_delay) # Use user-defined delay
