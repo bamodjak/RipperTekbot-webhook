@@ -90,29 +90,28 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_x_x_x` (where 'x' is a placeholder that will be replaced by random letters/digits). The bot will generate variations and check their availability.\n\n"
             "2. **Bulk Check List:** Send a list of usernames (one per line) and the bot will check each one for availability.\n\n"
             "**Aim:** To simplify the process of finding unique and unused Telegram usernames for your channels, groups, or personal profiles.\n\n"
-            "**Note:** Username availability checks are based on Telegram's API behavior (attempting to get chat info). While generally accurate, there might be edge cases (e.g., private channels) that affect results.",
+            "**Important Note on Accuracy:** Username availability checks are performed using Telegram's bot API (specifically, by attempting to retrieve chat information). While this method is generally accurate for public usernames, **it may not be 100% precise for all cases.** Some usernames might appear available through the bot but are actually taken by private entities or certain types of accounts, due to limitations in what bot APIs can check. **Always confirm availability directly on Telegram when attempting to set a username.**",
             parse_mode='Markdown',
             reply_markup=get_stop_and_back_keyboard()
         )
         return HOW_TO_INFO
-    elif query.data == 'download_available': # جديد: تحميل الأسماء المتاحة
+    elif query.data == 'download_available':
         if 'last_available_names' in context.user_data and context.user_data['last_available_names']:
-            await send_names_as_file(query.message.chat_id, context.user_data['last_available_names'], "available_usernames.txt")
+            await send_names_as_file(context, query.message.chat_id, context.user_data['last_available_names'], "available_usernames.txt")
         else:
             await query.message.reply_text("No available names found from your last search.")
-        return ConversationHandler.END # يمكن أن يعود إلى INITIAL_MENU أو يبقى في نفس الحالة
+        return ConversationHandler.END
 
-    elif query.data == 'download_all_checked': # جديد: تحميل كل الأسماء التي تم فحصها
+    elif query.data == 'download_all_checked':
         if 'last_all_checked_results' in context.user_data and context.user_data['last_all_checked_results']:
-            # تنسيق كل النتائج لتضمين الحالة (متاح/غير متاح)
             formatted_results = []
             for item in context.user_data['last_all_checked_results']:
                 status = "Available" if item['available'] else "Taken"
                 formatted_results.append(f"{item['username']} ({status})")
-            await send_names_as_file(query.message.chat_id, formatted_results, "all_checked_usernames.txt")
+            await send_names_as_file(context, query.message.chat_id, formatted_results, "all_checked_usernames.txt")
         else:
             await query.message.reply_text("No names found from your last search to download.")
-        return ConversationHandler.END # يمكن أن يعود إلى INITIAL_MENU أو يبقى في نفس الحالة
+        return ConversationHandler.END
 
     elif query.data == 'back' or query.data == 'stop':
         await query.edit_message_text(
@@ -144,24 +143,22 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
     letters = string.ascii_lowercase + string.digits
     generated = set()
     attempts = 0
-    max_attempts = num_variations_to_try * 5
+    max_attempts = num_variations_to_try * 5 # Keep a higher max_attempts to ensure enough unique names are generated if pattern is restrictive.
     
     PLACEHOLDER_CHAR = 'x'
 
     while len(generated) < num_variations_to_try and attempts < max_attempts:
         uname_chars = list(pattern)
         
-        # Ensure first character is not a digit if it's a placeholder
+        # Ensure first character is not a digit if it's a placeholder AND at the beginning
         if uname_chars and uname_chars[0] == PLACEHOLDER_CHAR:
             uname_chars[0] = random.choice(string.ascii_lowercase) # Only letters for the first char
         
+        # Replace other placeholders
         for i in range(len(uname_chars)):
-            if uname_chars[i] == PLACEHOLDER_CHAR and i != 0: # Placeholders after first char can be letters or digits
+            if uname_chars[i] == PLACEHOLDER_CHAR and i != 0:
                 uname_chars[i] = random.choice(letters)
-            elif uname_chars[i] == PLACEHOLDER_CHAR and i == 0: # Ensure first char is handled
-                 # Already handled above, this is for clarity
-                 pass
-        
+
         final_uname = "".join(uname_chars)
 
         if 5 <= len(final_uname) <= 32 and final_uname[0] != '_' and final_uname.replace('_', '').isalnum():
@@ -204,9 +201,10 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_PATTERN
 
     num_to_display = context.user_data.get('num_to_generate_display', 20)
-    num_variations_to_try = num_to_display * 10 
+    # هذا هو التعديل الرئيسي: نجعل عدد المحاولات يساوي العدد المطلوب للعرض
+    num_variations_to_try = num_to_display 
 
-    await update.message.reply_text(f"Searching for {num_to_display} available usernames based on '{pattern}', please wait...", reply_markup=get_stop_and_back_keyboard())
+    await update.message.reply_text(f"Searching for {num_to_display} usernames based on '{pattern}', please wait...", reply_markup=get_stop_and_back_keyboard())
     
     raw_usernames = generate_usernames(pattern, num_variations_to_try)
     logger.info(f"DEBUG_GENERATE: Pattern: '{pattern}', Generated {len(raw_usernames)} raw names. First 10: {raw_usernames[:10]}")
@@ -230,7 +228,6 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if available_names:
         text_parts.append(f"✅ Available ({len(available_names)}):")
-        # استخدام التنسيق ` `@name` ` لجعلها سهلة النسخ
         text_parts.append("\n".join([f"`@{name}`" for name in available_names[:num_to_display]]))
         if len(available_names) > num_to_display:
             text_parts.append(f"...and {len(available_names) - num_to_display} more available names.")
@@ -238,7 +235,7 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text_parts.append("😔 No available usernames found among the generated ones.")
 
     if taken_names:
-        MAX_TAKEN_TO_DISPLAY = 20 # حد لعدد الأسماء غير المتاحة المعروضة
+        MAX_TAKEN_TO_DISPLAY = 20
         text_parts.append(f"\n❌ Taken ({len(taken_names)}):")
         text_parts.append("\n".join([f"`@{name}`" for name in taken_names[:MAX_TAKEN_TO_DISPLAY]]))
         if len(taken_names) > MAX_TAKEN_TO_DISPLAY:
@@ -257,11 +254,11 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_text += "\nTry a smaller generation count for full list display, or use Bulk Check for specific lists."
 
 
-    await update.message.reply_text(final_text, parse_mode='Markdown', reply_markup=get_result_screen_keyboard()) # تم تغيير لوحة المفاتيح
+    await update.message.reply_text(final_text, parse_mode='Markdown', reply_markup=get_result_screen_keyboard())
     return INITIAL_MENU
 
 # Handle bulk checking request
-async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def bulk_list(update: Update, context: Contextypes.DEFAULT_TYPE):
     names = [n.strip() for n in update.message.text.splitlines() if n.strip()]
     if not names:
         await update.message.reply_text("Please provide a list of usernames.", reply_markup=get_stop_and_back_keyboard())
@@ -309,7 +306,7 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_text += f"❌ Taken: {len(taken_names)}\n"
         final_text += "\nConsider smaller lists for full display."
 
-    await update.message.reply_text(final_text, parse_mode='Markdown', reply_markup=get_result_screen_keyboard()) # تم تغيير لوحة المفاتيح
+    await update.message.reply_text(final_text, parse_mode='Markdown', reply_markup=get_result_screen_keyboard())
     return INITIAL_MENU
 
 # Cancel command handler
@@ -318,18 +315,21 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # Helper function to send a list of names as a text file
-async def send_names_as_file(chat_id: int, names_list: list[str], filename: str):
+async def send_names_as_file(context: ContextTypes.DEFAULT_TYPE, chat_id: int, names_list: list[str], filename: str):
     if not names_list:
         await context.bot.send_message(chat_id=chat_id, text=f"No names to save in {filename}.")
         return
 
     file_content = "\n".join(names_list)
-    # استخدام io.BytesIO لإنشاء ملف في الذاكرة
     file_stream = io.BytesIO(file_content.encode('utf-8'))
-    file_stream.name = filename # تحديد اسم للملف
+    file_stream.name = filename
 
-    await context.bot.send_document(chat_id=chat_id, document=InputFile(file_stream))
-    logger.info(f"Sent {filename} to chat {chat_id}")
+    try:
+        await context.bot.send_document(chat_id=chat_id, document=InputFile(file_stream))
+        logger.info(f"Sent {filename} to chat {chat_id}")
+    except Exception as e:
+        logger.error(f"Failed to send document {filename} to chat {chat_id}: {e}")
+        await context.bot.send_message(chat_id=chat_id, text=f"Failed to send the file: {e}")
 
 
 # Main application setup and run
@@ -361,7 +361,7 @@ if __name__ == '__main__':
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
-            CallbackQueryHandler(button, pattern="^back$|^stop$|^download_available$|^download_all_checked$") # أضف أزرار التحميل هنا أيضاً كـ fallbacks
+            CallbackQueryHandler(button, pattern="^back$|^stop$|^download_available$|^download_all_checked$")
         ],
         per_message=False
     )
