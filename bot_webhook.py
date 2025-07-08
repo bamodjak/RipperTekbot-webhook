@@ -6,7 +6,7 @@ import asyncio
 import warnings
 import io
 import re
-import httpx # Added httpx for API calls
+import httpx 
 
 # Suppress the PTBUserWarning
 warnings.filterwarnings(
@@ -90,8 +90,8 @@ translations = {
             "**Aim:** To simplify the process of finding unique and unused Telegram usernames for your channels, groups, or personal profiles.\n\n"
             "**Important Note on Accuracy:** Username availability checks are performed using Telegram's bot API (specifically, by attempting to retrieve chat information). While this method is generally accurate for public usernames, **it may not be 100% precise for all cases.** Some usernames might appear available through the bot but are actually taken by private entities or certain types of accounts, due to limitations in what bot APIs can check. **Always confirm availability directly on Telegram when attempting to set a username.**"
         ),
-        'flood_wait_message': "❗️ Bot paused due to Telegram's flood control. Retrying in {retry_after} seconds. Please wait, this might take a while for large requests.",
-        'stopping_process_ack': "🛑 Stopping process... Displaying results shortly.",
+        'flood_wait_message': "❗️ Bot paused due to Telegram's flood control. Retrying in {retry_after} seconds. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة.",
+        'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً.",
         'found_available_immediate': "🎉 Available now: {username}"
     },
     'ar': {
@@ -298,7 +298,7 @@ async def generate_usernames(pattern: str, num_variations_to_try: int = 200, con
 
     while len(generated) < num_variations_to_try and attempts < max_attempts:
         current_username_parts = []
-        seed_word_inserted = False
+        seed_word_used = False
         
         # Calculate the ideal total length of the generated username based on the pattern
         total_pattern_implied_length = 0
@@ -317,10 +317,10 @@ async def generate_usernames(pattern: str, num_variations_to_try: int = 200, con
             elif part_type == 'placeholder_block':
                 block_len = content # This is the number of 'x's in the block
 
-                if not seed_word_inserted and current_seed_words:
+                if not seed_word_used and current_seed_words:
                     # This is the first 'x' block. Try to insert a word.
                     
-                    # Calculate remaining fixed length and min_x_fill for subsequent blocks
+                    # Calculate min length of remaining pattern parts
                     remaining_pattern_min_len = 0
                     for subsequent_part_type, subsequent_content in parsed_pattern_parts[idx+1:]:
                         if subsequent_part_type == 'fixed':
@@ -328,37 +328,35 @@ async def generate_usernames(pattern: str, num_variations_to_try: int = 200, con
                         elif subsequent_part_type == 'placeholder_block':
                             remaining_pattern_min_len += 1 # Assume minimum 1 char for subsequent 'x' blocks
 
-                    # Determine max word length to fit this block and overall pattern
-                    # current_len = len("".join(current_username_parts))
-                    # max_allowed_word_len = total_pattern_implied_length - current_len - remaining_pattern_min_len
-                    # max_allowed_word_len = max(MIN_USERNAME_LENGTH, min(max_allowed_word_len, MAX_USERNAME_LENGTH))
-                    
-                    # A simpler approach: aim for word to fit within block_len,
-                    # but also ensure the overall final username length is valid.
-                    
                     chosen_word = None
                     
                     # Filter for words that start with a letter and are not too long for the *total* username
-                    valid_starting_words = [w for w in current_seed_words if w[0].isalpha()]
-
-                    # Prioritize words that are <= block_len, or closest to it
-                    candidate_words_by_fit = []
-                    for word in valid_starting_words:
-                        # Check if word + current_parts + remaining_pattern can fit total length
-                        hypothetical_total_len = len("".join(current_username_parts)) + len(word) + max(0, block_len - len(word)) + remaining_pattern_min_len
-                        
-                        if MIN_USERNAME_LENGTH <= hypothetical_total_len <= MAX_USERNAME_LENGTH:
-                            candidate_words_by_fit.append((abs(len(word) - block_len), word))
+                    # Prefer words that fit within block_len.
+                    # This is where the core logic for `xxxxx` -> ~5 chars is.
                     
-                    if candidate_words_by_fit:
-                        candidate_words_by_fit.sort(key=lambda x: x[0]) # Sort by closeness to block_len
-                        # Pick a random word among those with the best fit
-                        best_fit_diff = candidate_words_by_fit[0][0]
-                        best_fit_words = [w for diff, w in candidate_words_by_fit if diff == best_fit_diff]
-                        chosen_word = random.choice(best_fit_words)
-                    elif valid_starting_words: # If no perfect fit, just pick any valid starting word
-                         # But ensure it allows for a valid username to be formed
-                        chosen_word = random.choice(valid_starting_words)
+                    # Attempt 1: Find word that fits exactly or is shorter than block_len
+                    strict_fit_words = []
+                    for word in current_seed_words:
+                        # Check if word itself starts with a letter and fits within the block
+                        if word[0].isalpha() and len(word) <= block_len:
+                            # Also check if using this word allows total username to be valid
+                            hypothetical_total_len = len("".join(current_username_parts)) + len(word) + max(0, block_len - len(word)) + remaining_pattern_min_len
+                            if MIN_USERNAME_LENGTH <= hypothetical_total_len <= MAX_USERNAME_LENGTH:
+                                strict_fit_words.append(word)
+                    
+                    if strict_fit_words:
+                        chosen_word = random.choice(strict_fit_words)
+                    else:
+                        # Attempt 2: If no strict fit, find any word that still allows a valid total username length
+                        any_fit_words = []
+                        for word in current_seed_words:
+                            if word[0].isalpha():
+                                # Calculate hypothetical total length if this word is used
+                                hypothetical_total_len = len("".join(current_username_parts)) + len(word) + remaining_pattern_min_len
+                                if MIN_USERNAME_LENGTH <= hypothetical_total_len <= MAX_USERNAME_LENGTH:
+                                    any_fit_words.append(word)
+                        if any_fit_words:
+                            chosen_word = random.choice(any_fit_words)
 
 
                     if chosen_word:
@@ -370,8 +368,9 @@ async def generate_usernames(pattern: str, num_variations_to_try: int = 200, con
                         if chars_to_fill_in_block > 0:
                             for _ in range(chars_to_fill_in_block):
                                 current_username_parts.append(random.choice(letters_digits))
-                        # If chosen_word is longer than block_len, it effectively overfills this block,
-                        # and the overall length validation will catch it later if it exceeds MAX_USERNAME_LENGTH.
+                        # If chosen_word is longer than block_len, it effectively 'overfills' this block,
+                        # but we still use it if it was the only viable option from "any_fit_words".
+                        # The overall is_valid_username check will enforce max_length.
                     else:
                         # Fallback: if no word chosen, fill the block with random characters
                         for _ in range(block_len):
@@ -859,3 +858,4 @@ if __name__ == '__main__':
     else:
         logger.warning("No WEBHOOK_URL set. Running in polling mode. This is not recommended for production on Railway.")
         app.run_polling()
+
