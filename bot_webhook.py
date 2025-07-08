@@ -58,7 +58,7 @@ translations = {
         'ask_delay': "Enter a delay between checks in seconds (e.g., 0.1 for 100ms, 1 for 1s). Enter 0 for no additional delay:",
         'invalid_delay': "Please enter a valid number for delay (e.g., 0.1, 1, 5).",
         'searching_names': "Searching for {count} usernames based on '{pattern}', please wait...",
-        'checking_progress': "Checking... {current_checked} of {total_to_check} names processed.\n✅ Available: {available_count}\n❌ Taken: {taken_count}\n\n(Updates may be delayed due to Telegram's limits)", # Updated progress message
+        'checking_progress': "Checking... {current_checked} of {total_to_check} names processed.\n✅ Available: {available_count}\n❌ Taken: {taken_count}\n\n(Updates may be delayed due to Telegram's limits)",
         'large_request_warning': "⚠️ Warning: Checking a large number of names might take a long time and could sometimes lead to timeouts or forced pauses due to Telegram's rate limits.",
         'checked_variations': "Checked {total_checked} variations for pattern '{pattern}'.\n",
         'available_names': "✅ Available ({count}):",
@@ -89,7 +89,8 @@ translations = {
             "**Aim:** To simplify the process of finding unique and unused Telegram usernames for your channels, groups, or personal profiles.\n\n"
             "**Important Note on Accuracy:** Username availability checks are performed using Telegram's bot API (specifically, by attempting to retrieve chat information). While this method is generally accurate for public usernames, **it may not be 100% precise for all cases.** Some usernames might appear available through the bot but are actually taken by private entities or certain types of accounts, due to limitations in what bot APIs can check. **Always confirm availability directly on Telegram when attempting to set a username.**"
         ),
-        'flood_wait_message': "❗️ Bot paused due to Telegram's flood control. Retrying in {retry_after} seconds. Please wait, this might take a while for large requests."
+        'flood_wait_message': "❗️ Bot paused due to Telegram's flood control. Retrying in {retry_after} seconds. Please wait, this might take a while for large requests.",
+        'stopping_process_ack': "🛑 Stopping process... Displaying results shortly." # New acknowledgement message
     },
     'ar': {
         'welcome': "أهلاً بك في بوت RipperTek. الرجاء الاختيار:",
@@ -108,7 +109,7 @@ translations = {
         'ask_delay': "أدخل تأخيراً بين عمليات الفحص بالثواني (مثال: 0.1 لـ 100 مللي ثانية، 1 لـ 1 ثانية). أدخل 0 لعدم وجود تأخير إضافي:",
         'invalid_delay': "الرجاء إدخال رقم صالح للتأخير (مثال: 0.1, 1, 5).",
         'searching_names': "جارٍ البحث عن {count} اسم مستخدم بناءً على '{pattern}'، الرجاء الانتظار...",
-        'checking_progress': "جارٍ الفحص... {current_checked} من {total_to_check} اسم تمت معالجته.\n✅ متاح: {available_count}\n❌ محجوز: {taken_count}\n\n(قد تتأخر التحديثات بسبب قيود تلغرام)", # Updated progress message
+        'checking_progress': "جارٍ الفحص... {current_checked} من {total_to_check} اسم تمت معالجته.\n✅ متاح: {available_count}\n❌ محجوز: {taken_count}\n\n(قد تتأخر التحديثات بسبب قيود تلغرام)",
         'large_request_warning': "⚠️ تحذير: فحص عدد كبير من الأسماء قد يستغرق وقتاً طويلاً وقد يؤدي أحياناً إلى مهلة أو توقف إجباري بسبب قيود الطلبات من تلغرام.",
         'checked_variations': "تم فحص {total_checked} اختلافاً للنمط '{pattern}'.\n",
         'available_names': "✅ متاح ({count}):",
@@ -139,7 +140,8 @@ translations = {
             "**الهدف:** تبسيط عملية العثور على أسماء مستخدمين فريدة وغير مستخدمة في تيليجرام لقنواتك أو مجموعاتك أو ملفاتك الشخصية.\n\n"
             "**ملاحظة هامة حول الدقة:** يتم إجراء فحوصات توفر اسم المستخدم باستخدام واجهة برمجة تطبيقات بوت تيليجرام (على وجه التحديد، عن طريق محاولة استرداد معلومات الدردشة). بينما هذه الطريقة دقيقة بشكل عام لأسماء المستخدمين العامة، **قد لا تكون دقيقة بنسبة 100% في جميع الحالات.** قد تظهر بعض أسماء المستخدمين متاحة من خلال البوت ولكنها في الواقع محجوزة بواسطة كيانات خاصة أو أنواع معينة من الحسابات، بسبب قيود في ما يمكن لواجهات برمجة تطبيقات البوت فحصه. **تأكد دائماً من التوفر مباشرة على تيليجرام عند محاولة تعيين اسم مستخدم.**"
         ),
-        'flood_wait_message': "❗️ تم إيقاف البوت مؤقتاً بسبب قيود تلغرام على الطلبات. سيعاود المحاولة بعد {retry_after} ثانية. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة."
+        'flood_wait_message': "❗️ تم إيقاف البوت مؤقتاً بسبب قيود تلغرام على الطلبات. سيعاود المحاولة بعد {retry_after} ثانية. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة.",
+        'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً."
     }
 }
 
@@ -248,12 +250,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return INITIAL_MENU
     
-    elif query.data == 'stop_processing':
+    elif query.data == 'stop_processing': # Updated logic for stop_processing
         context.user_data['stop_requested'] = True
-        await query.edit_message_text(get_text(context, 'operation_cancelled'), reply_markup=get_main_menu_keyboard(context))
-        return INITIAL_MENU
+        await query.answer(text=get_text(context, 'stopping_process_ack')) # Show acknowledgement
+        # The display_results call and state transition will be handled by the main processing loop
+        # (handle_delay_input or bulk_list) after it breaks.
+        return ConversationHandler.END # End the conversation here. The main loop will then call display_results.
 
-    return ConversationHandler.END
 
 # Handler for language selection callback
 async def set_language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -308,9 +311,10 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if num_to_display > 100:
             warning_text = get_text(context, 'large_request_warning') + "\n\n"
 
+        # Send initial "Searching..." message and store its ID for updates
         initial_message = await update.message.reply_text(warning_text + get_text(context, 'searching_names', count=num_to_display, pattern=pattern), parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard(context))
         context.user_data['progress_message_id'] = initial_message.message_id
-        context.user_data['stop_requested'] = False
+        context.user_data['stop_requested'] = False # Ensure stop flag is reset at start of new process
 
         raw_usernames = generate_usernames(pattern, num_to_display)
         logger.info(f"DEBUG_GENERATE: Pattern: '{pattern}', Generated {len(raw_usernames)} raw names. First 10: {raw_usernames[:10]}")
@@ -327,7 +331,7 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         for i, uname in enumerate(raw_usernames):
             if context.user_data.get('stop_requested'):
                 logger.info("Stop requested by user. Breaking loop.")
-                break
+                break # Exit loop if stop is requested
 
             is_available, username_str, link = await check_username_availability(context, uname)
             all_results.append({'username': username_str, 'available': is_available, 'link': link})
@@ -351,74 +355,21 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         reply_markup=get_stop_and_back_keyboard(context)
                     )
                     last_update_time = current_time
-                except BadRequest as e: # Catch BadRequest specific to editMessageText rate limits
-                    logger.warning(f"Failed to edit progress message (likely rate limit or formatting): {e}. Will try again later.")
+                except BadRequest as e:
+                    logger.warning(f"Failed to edit progress message (likely rate limit or formatting): {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
                 except Exception as e:
                     logger.error(f"Unexpected error when editing progress message: {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
                 
             await asyncio.sleep(check_delay)
 
+        # After loop, regardless of stop or completion, display final/partial results
         await display_results(update, context, all_results, is_final=True, pattern=pattern)
-        return INITIAL_MENU
+        return INITIAL_MENU # Return to main menu after showing results
         # --- End of main processing logic ---
 
     except ValueError:
         await update.message.reply_text(get_text(context, 'invalid_delay'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_DELAY
-
-# This function is now just a helper to display final/partial results
-# The main processing loop moved to handle_delay_input for pattern generation and bulk_list
-async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, all_results: list[dict], is_final: bool, pattern: str = None):
-    available_names_info = [r for r in all_results if r['available']]
-    taken_names_info = [r for r in all_results if not r['available']]
-
-    context.user_data['last_available_names'] = [r['username'] for r in available_names_info]
-    context.user_data['last_all_checked_results'] = all_results
-
-    text_parts = []
-    if pattern:
-        text_parts.append(get_text(context, 'checked_variations', total_checked=len(all_results), pattern=pattern))
-    else: # For bulk list
-        text_parts.append(get_text(context, 'checked_list_usernames', total_checked=len(all_results)))
-
-
-    def format_names_for_display(name_objects: list[dict]) -> list[str]:
-        formatted = []
-        for item in name_objects:
-            if item['link']:
-                formatted.append(f"[`@{item['username']}`]({item['link']})")
-            else:
-                formatted.append(f"`@{item['username']}`")
-        return formatted
-
-    if available_names_info:
-        text_parts.append(get_text(context, 'available_names', count=len(available_names_info)))
-        display_available = format_names_for_display(available_names_info)
-        text_parts.append("\n".join(display_available))
-        if len(available_names_info) > context.user_data.get('num_to_generate_display', len(available_names_info)):
-            text_parts.append(f"...and {len(available_names_info) - context.user_data.get('num_to_generate_display', len(available_names_info))} more available names.")
-    else:
-        text_parts.append(get_text(context, 'no_available_names'))
-
-    if taken_names_info:
-        MAX_TAKEN_TO_DISPLAY = 20
-        text_parts.append(get_text(context, 'taken_names', count=len(taken_names_info)))
-        display_taken = format_names_for_display(taken_names_info[:MAX_TAKEN_TO_DISPLAY])
-        text_parts.append("\n".join(display_taken))
-        if len(taken_names_info) > MAX_TAKEN_TO_DISPLAY:
-            text_parts.append(f"...and {len(taken_names_info) - MAX_TAKEN_TO_DISPLAY} more taken names.")
-    else:
-        text_parts.append(get_text(context, 'all_generated_available'))
-
-
-    final_text = "\n".join(text_parts)
-    
-    if len(final_text) > 4000:
-        final_text = get_text(context, 'result_too_long', total_checked=len(all_results), available_count=len(available_names_info), taken_count=len(taken_names_info))
-
-    # This should always be a NEW message when results are displayed (final or partial on stop)
-    await update.effective_chat.send_message(final_text, parse_mode='Markdown', reply_markup=get_result_screen_keyboard(context))
-
 
 # This function is now ONLY for handling pattern input and moving to ASK_DELAY.
 # The main processing logic is moved to handle_delay_input.
@@ -492,7 +443,7 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await display_results(update, context, all_results, is_final=True)
     return INITIAL_MENU
 
-# Cancel command handler (for general cancellation, not specific stop during process)
+# Cancel command handler
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['stop_requested'] = True
     await update.message.reply_text(get_text(context, 'operation_cancelled'), reply_markup=get_main_menu_keyboard(context))
@@ -531,16 +482,16 @@ if __name__ == '__main__':
             ],
 
             ASK_PATTERN: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pattern_input), # Renamed ask_pattern to handle_pattern_input
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pattern_input),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
             ],
             
-            ASK_DELAY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input), # This now starts processing
+            ASK_DELAY: [ # New state for delay input. handle_delay_input starts the processing.
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
             ],
 
-            BULK_LIST: [ # This state directly handles bulk list input and starts processing
+            BULK_LIST: [ # This state directly handles bulk list input and starts processing.
                 MessageHandler(filters.TEXT & ~filters.COMMAND, bulk_list),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
             ],
