@@ -149,16 +149,18 @@ if __name__ == '__main__':
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            # هنا يتم إضافة per_message=False لل CallbackQueryHandler
-            INITIAL_MENU: [CallbackQueryHandler(button, per_message=False)],
+            # هنا يتم إزالة per_message=False من CallbackQueryHandler
+            INITIAL_MENU: [CallbackQueryHandler(button)],
             ASK_EXAMPLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_example)],
             BULK_LIST: [MessageHandler(filters.TEXT & ~filters.COMMAND, bulk_list)],
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
-            # هنا أيضاً إذا كنت تستخدم CallbackQueryHandler في fallbacks
-            CallbackQueryHandler(button, pattern="^back$", per_message=False)
+            # وهنا أيضاً يتم إزالة per_message=False
+            CallbackQueryHandler(button, pattern="^back$")
         ],
+        # ولكن يتم إضافة per_message=False هنا في ConversationHandler
+        per_message=False
     )
 
     app.add_handler(conv_handler)
@@ -179,4 +181,3 @@ if __name__ == '__main__':
     else:
         logger.warning("No WEBHOOK_URL set. Running in polling mode.")
         app.run_polling()
-
