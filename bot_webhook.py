@@ -34,7 +34,7 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN environment variable not set! Please set it on Railway.")
 
-# States for ConversationHandler (تم تعديل الحالات لإضافة ASK_COUNT وتغيير ASK_EXAMPLE إلى ASK_PATTERN)
+# States for ConversationHandler
 INITIAL_MENU, ASK_COUNT, ASK_PATTERN, BULK_LIST, HOW_TO_INFO = range(5)
 
 # --- Helper Function to create Main Menu Keyboard ---
@@ -66,9 +66,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == 'generate':
-        # عند الضغط على 'Generate'، نطلب العدد أولاً
         await query.edit_message_text("How many names would you like to generate and check (1-100)?", reply_markup=get_stop_and_back_keyboard())
-        return ASK_COUNT # الانتقال إلى الحالة الجديدة ASK_COUNT
+        return ASK_COUNT
     elif query.data == 'bulk':
         await query.edit_message_text("Send a list of usernames (one per line):", reply_markup=get_stop_and_back_keyboard())
         return BULK_LIST
@@ -77,7 +76,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "**How RipperTek Bot Works:**\n\n"
             "This bot helps you find available Telegram usernames. "
             "You can either:\n\n"
-            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_a_b_c` (where 'a', 'b', 'c' are placeholders that will be replaced by random letters/digits). The bot will generate variations and check their availability.\n\n" # تم تحديث الشرح
+            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_a_b_c` (where 'a', 'b', 'c' are placeholders that will be replaced by random letters/digits). The bot will generate variations and check their availability.\n\n"
             "2. **Bulk Check List:** Send a list of usernames (one per line) and the bot will check each one for availability.\n\n"
             "**Aim:** To simplify the process of finding unique and unused Telegram usernames for your channels, groups, or personal profiles.\n\n"
             "**Note:** Username availability checks are based on Telegram's API behavior (attempting to get chat info). While generally accurate, there might be edge cases (e.g., private channels) that affect results.",
@@ -98,24 +97,24 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         count = int(update.message.text.strip())
-        if not (1 <= count <= 100): # تحديد نطاق للعدد
+        if not (1 <= count <= 100):
             await update.message.reply_text("Please enter a number between 1 and 100.", reply_markup=get_stop_and_back_keyboard())
-            return ASK_COUNT # البقاء في نفس الحالة إذا كان العدد خارج النطاق
+            return ASK_COUNT
         
-        context.user_data['num_to_generate_display'] = count # حفظ العدد في user_data
+        context.user_data['num_to_generate_display'] = count
         await update.message.reply_text("Send a sample pattern (e.g., `user_a_b_c` where 'a', 'b', 'c' are replaced by random chars/digits):", parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard())
-        return ASK_PATTERN # الانتقال إلى طلب النمط
+        return ASK_PATTERN
     except ValueError:
         await update.message.reply_text("That's not a valid number. Please enter a number.", reply_markup=get_stop_and_back_keyboard())
-        return ASK_COUNT # البقاء في نفس الحالة إذا لم يكن إدخالاً رقمياً
+        return ASK_COUNT
 
 
-# Username generator logic (بدون تغيير في عملها، فقط اسم المعامل)
+# Username generator logic
 def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[str]:
     letters = string.ascii_lowercase + string.digits
     generated = set()
     attempts = 0
-    max_attempts = num_variations_to_try * 5 # زيادة محاولات التوليد
+    max_attempts = num_variations_to_try * 5
 
     while len(generated) < num_variations_to_try and attempts < max_attempts:
         uname_chars = list(pattern)
@@ -158,39 +157,69 @@ async def check_username_availability(context: ContextTypes.DEFAULT_TYPE, userna
 
     return False
 
-# Handle generated pattern request (تم تغيير الاسم إلى ask_pattern ليتناسب مع التدفق الجديد)
+# Handle generated pattern request (تم تعديل هذا الجزء لعرض النتائج)
 async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pattern = update.message.text.strip().lower()
     if not pattern:
         await update.message.reply_text("Please provide a valid pattern.", reply_markup=get_stop_and_back_keyboard())
         return ASK_PATTERN
 
-    num_to_display = context.user_data.get('num_to_generate_display', 20) # استرجاع العدد من user_data
-    num_variations_to_try = num_to_display * 10 # محاولة توليد عدد أكبر لضمان العثور على المطلوب
+    num_to_display = context.user_data.get('num_to_generate_display', 20)
+    num_variations_to_try = num_to_display * 10 
 
-    await update.message.reply_text(f"Searching for {num_to_display} available usernames, please wait...", reply_markup=get_stop_and_back_keyboard())
+    await update.message.reply_text(f"Searching for {num_to_display} available usernames based on '{pattern}', please wait...", reply_markup=get_stop_and_back_keyboard())
     
-    raw_usernames = generate_usernames(pattern, num_variations_to_try) # تمرير العدد الكلي للمحاولات
+    raw_usernames = generate_usernames(pattern, num_variations_to_try)
     logger.info(f"DEBUG_GENERATE: Pattern: '{pattern}', Generated {len(raw_usernames)} raw names. First 10: {raw_usernames[:10]}")
     
-    available = []
+    all_results = [] # قائمة لتخزين كل النتائج
     
     for uname in raw_usernames:
-        if await check_username_availability(context, uname):
-            available.append(uname)
-            if len(available) >= num_to_display: # استخدام العدد المطلوب للعرض
-                break
+        is_available = await check_username_availability(context, uname)
+        all_results.append({'username': uname, 'available': is_available})
         await asyncio.sleep(0.05)
 
-    if available:
-        text = f"✅ First {len(available)} available usernames:\n" + "\n".join(available)
-    else:
-        text = f"😔 No available usernames found for your pattern '{pattern}' after checking {len(raw_usernames)} variations. Try a different pattern (remember 'a','b','c' are placeholders)."
+    available_names = [r['username'] for r in all_results if r['available']]
+    taken_names = [r['username'] for r in all_results if not r['available']]
 
-    await update.message.reply_text(text, reply_markup=get_stop_and_back_keyboard())
+    # بناء رسالة النتيجة
+    text_parts = [f"Checked {len(all_results)} variations for pattern '{pattern}'.\n"]
+
+    if available_names:
+        text_parts.append(f"✅ Available ({len(available_names)}):")
+        # عرض عدد الأسماء المتاحة التي طلبها المستخدم أو كل ما تم إيجاده
+        text_parts.append("\n".join(available_names[:num_to_display]))
+        if len(available_names) > num_to_display:
+            text_parts.append(f"...and {len(available_names) - num_to_display} more available names.")
+    else:
+        text_parts.append("😔 No available usernames found among the generated ones.")
+
+    # عرض الأسماء غير المتاحة (عدد محدود لتجنب رسائل طويلة جداً)
+    if taken_names:
+        MAX_TAKEN_TO_DISPLAY = 20 # يمكن تعديل هذا الحد
+        text_parts.append(f"\n❌ Taken ({len(taken_names)}):")
+        text_parts.append("\n".join(taken_names[:MAX_TAKEN_TO_DISPLAY]))
+        if len(taken_names) > MAX_TAKEN_TO_DISPLAY:
+            text_parts.append(f"...and {len(taken_names) - MAX_TAKEN_TO_DISPLAY} more taken names.")
+    else:
+        text_parts.append("\n🎉 All generated variations were found available! (Unlikely for large numbers)")
+
+
+    final_text = "\n".join(text_parts)
+    
+    # تحقق بسيط من طول الرسالة لتجنب تجاوز حد تلغرام
+    if len(final_text) > 4000:
+        final_text = "Result too long to display fully. Showing summary:\n"
+        final_text += f"Total checked: {len(all_results)}\n"
+        final_text += f"✅ Available: {len(available_names)}\n"
+        final_text += f"❌ Taken: {len(taken_names)}\n"
+        final_text += "\nTry a smaller generation count for full list display, or use Bulk Check for specific lists."
+
+
+    await update.message.reply_text(final_text, reply_markup=get_stop_and_back_keyboard())
     return INITIAL_MENU # العودة إلى القائمة الرئيسية بعد الانتهاء
 
-# Handle bulk checking request
+# Handle bulk checking request (تم تعديل هذا الجزء لعرض النتائج)
 async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     names = [n.strip() for n in update.message.text.splitlines() if n.strip()]
     if not names:
@@ -199,18 +228,45 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Checking your list, please wait...", reply_markup=get_stop_and_back_keyboard())
 
-    available = []
+    all_results = [] # قائمة لتخزين كل النتائج
     for name in names:
-        if await check_username_availability(context, name):
-            available.append(name)
+        is_available = await check_username_availability(context, name)
+        all_results.append({'username': name, 'available': is_available})
         await asyncio.sleep(0.05)
 
-    if available:
-        text = "✅ Available usernames:\n" + "\n".join(available)
-    else:
-        text = "😔 None of the provided usernames are available."
+    available_names = [r['username'] for r in all_results if r['available']]
+    taken_names = [r['username'] for r in all_results if not r['available']]
 
-    await update.message.reply_text(text, reply_markup=get_stop_and_back_keyboard())
+    # بناء رسالة النتيجة
+    text_parts = [f"Checked {len(all_results)} usernames from your list.\n"]
+
+    if available_names:
+        text_parts.append(f"✅ Available ({len(available_names)}):")
+        text_parts.append("\n".join(available_names))
+    else:
+        text_parts.append("😔 None of the provided usernames are available.")
+
+    # عرض الأسماء غير المتاحة (عدد محدود لتجنب رسائل طويلة جداً)
+    if taken_names:
+        MAX_TAKEN_TO_DISPLAY = 20 # يمكن تعديل هذا الحد
+        text_parts.append(f"\n❌ Taken ({len(taken_names)}):")
+        text_parts.append("\n".join(taken_names[:MAX_TAKEN_TO_DISPLAY]))
+        if len(taken_names) > MAX_TAKEN_TO_DISPLAY:
+            text_parts.append(f"...and {len(taken_names) - MAX_TAKEN_TO_DISPLAY} more taken names.")
+    else:
+        text_parts.append("\n🎉 All provided usernames were found available! (Unlikely for large numbers)")
+
+    final_text = "\n".join(text_parts)
+    
+    # تحقق بسيط من طول الرسالة لتجنب تجاوز حد تلغرام
+    if len(final_text) > 4000:
+        final_text = "Result too long to display fully. Showing summary:\n"
+        final_text += f"Total checked: {len(all_results)}\n"
+        final_text += f"✅ Available: {len(available_names)}\n"
+        final_text += f"❌ Taken: {len(taken_names)}\n"
+        final_text += "\nConsider smaller lists for full display."
+
+    await update.message.reply_text(final_text, reply_markup=get_stop_and_back_keyboard())
     return INITIAL_MENU # العودة إلى القائمة الرئيسية بعد الانتهاء
 
 # Cancel command handler
@@ -227,29 +283,29 @@ if __name__ == '__main__':
         states={
             INITIAL_MENU: [CallbackQueryHandler(button)],
             
-            # حالة جديدة لطلب العدد
+            # حالة طلب العدد
             ASK_COUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_count_input),
-                CallbackQueryHandler(button, pattern="^back$|^stop$") # Back/Stop buttons work here
+                CallbackQueryHandler(button, pattern="^back$|^stop$")
             ],
 
-            # حالة طلب النمط (تم تغيير الاسم)
+            # حالة طلب النمط
             ASK_PATTERN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_pattern),
-                CallbackQueryHandler(button, pattern="^back$|^stop$") # Back/Stop buttons work here
+                CallbackQueryHandler(button, pattern="^back$|^stop$")
             ],
             
             BULK_LIST: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, bulk_list),
-                CallbackQueryHandler(button, pattern="^back$|^stop$") # Back/Stop buttons work here
+                CallbackQueryHandler(button, pattern="^back$|^stop$")
             ],
             HOW_TO_INFO: [
-                CallbackQueryHandler(button, pattern="^back$|^stop$") # Back/Stop buttons work here
+                CallbackQueryHandler(button, pattern="^back$|^stop$")
             ]
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
-            CallbackQueryHandler(button, pattern="^back$|^stop$") # Global Back/Stop fallback
+            CallbackQueryHandler(button, pattern="^back$|^stop$")
         ],
         per_message=False
     )
