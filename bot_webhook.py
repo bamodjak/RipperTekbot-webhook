@@ -66,6 +66,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == 'generate':
+        # تم تعديل رسالة الطلب لتوضح طريقة عمل النمط بـ 'x' كـ placeholder
         await query.edit_message_text("How many names would you like to generate and check (1-100)?", reply_markup=get_stop_and_back_keyboard())
         return ASK_COUNT
     elif query.data == 'bulk':
@@ -76,7 +77,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "**How RipperTek Bot Works:**\n\n"
             "This bot helps you find available Telegram usernames. "
             "You can either:\n\n"
-            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_a_b_c` (where 'a', 'b', 'c' are placeholders that will be replaced by random letters/digits). The bot will generate variations and check their availability.\n\n"
+            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_x_x_x` (where 'x' is a placeholder that will be replaced by random letters/digits). The bot will generate variations and check their availability.\n\n" # تم تحديث الشرح لـ 'x'
             "2. **Bulk Check List:** Send a list of usernames (one per line) and the bot will check each one for availability.\n\n"
             "**Aim:** To simplify the process of finding unique and unused Telegram usernames for your channels, groups, or personal profiles.\n\n"
             "**Note:** Username availability checks are based on Telegram's API behavior (attempting to get chat info). While generally accurate, there might be edge cases (e.g., private channels) that affect results.",
@@ -102,25 +103,28 @@ async def handle_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return ASK_COUNT
         
         context.user_data['num_to_generate_display'] = count
-        await update.message.reply_text("Send a sample pattern (e.g., `user_a_b_c` where 'a', 'b', 'c' are replaced by random chars/digits):", parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard())
+        # تم تعديل رسالة الطلب لـ 'x' كـ placeholder
+        await update.message.reply_text("Send a sample pattern (e.g., `user_x_x_x` where 'x' is replaced by random chars/digits):", parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard())
         return ASK_PATTERN
     except ValueError:
         await update.message.reply_text("That's not a valid number. Please enter a number.", reply_markup=get_stop_and_back_keyboard())
         return ASK_COUNT
 
 
-# Username generator logic
+# Username generator logic (تم تعديل هذا الجزء لاستخدام 'x' كـ placeholder)
 def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[str]:
     letters = string.ascii_lowercase + string.digits
     generated = set()
     attempts = 0
     max_attempts = num_variations_to_try * 5
+    
+    PLACEHOLDER_CHAR = 'x' # <--- تم تعريف الـ placeholder هنا
 
     while len(generated) < num_variations_to_try and attempts < max_attempts:
         uname_chars = list(pattern)
         
         for i in range(len(uname_chars)):
-            if uname_chars[i] in ['a', 'b', 'c']:
+            if uname_chars[i] == PLACEHOLDER_CHAR: # <--- تم التعديل للاستبدال فقط إذا كان الحرف هو 'x'
                 uname_chars[i] = random.choice(letters)
         
         final_uname = "".join(uname_chars)
@@ -157,7 +161,7 @@ async def check_username_availability(context: ContextTypes.DEFAULT_TYPE, userna
 
     return False
 
-# Handle generated pattern request (تم تعديل هذا الجزء لعرض النتائج)
+# Handle generated pattern request
 async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pattern = update.message.text.strip().lower()
     if not pattern:
@@ -172,7 +176,7 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_usernames = generate_usernames(pattern, num_variations_to_try)
     logger.info(f"DEBUG_GENERATE: Pattern: '{pattern}', Generated {len(raw_usernames)} raw names. First 10: {raw_usernames[:10]}")
     
-    all_results = [] # قائمة لتخزين كل النتائج
+    all_results = []
     
     for uname in raw_usernames:
         is_available = await check_username_availability(context, uname)
@@ -187,7 +191,6 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if available_names:
         text_parts.append(f"✅ Available ({len(available_names)}):")
-        # عرض عدد الأسماء المتاحة التي طلبها المستخدم أو كل ما تم إيجاده
         text_parts.append("\n".join(available_names[:num_to_display]))
         if len(available_names) > num_to_display:
             text_parts.append(f"...and {len(available_names) - num_to_display} more available names.")
@@ -196,7 +199,7 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # عرض الأسماء غير المتاحة (عدد محدود لتجنب رسائل طويلة جداً)
     if taken_names:
-        MAX_TAKEN_TO_DISPLAY = 20 # يمكن تعديل هذا الحد
+        MAX_TAKEN_TO_DISPLAY = 20
         text_parts.append(f"\n❌ Taken ({len(taken_names)}):")
         text_parts.append("\n".join(taken_names[:MAX_TAKEN_TO_DISPLAY]))
         if len(taken_names) > MAX_TAKEN_TO_DISPLAY:
@@ -207,7 +210,6 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     final_text = "\n".join(text_parts)
     
-    # تحقق بسيط من طول الرسالة لتجنب تجاوز حد تلغرام
     if len(final_text) > 4000:
         final_text = "Result too long to display fully. Showing summary:\n"
         final_text += f"Total checked: {len(all_results)}\n"
@@ -217,9 +219,9 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
     await update.message.reply_text(final_text, reply_markup=get_stop_and_back_keyboard())
-    return INITIAL_MENU # العودة إلى القائمة الرئيسية بعد الانتهاء
+    return INITIAL_MENU
 
-# Handle bulk checking request (تم تعديل هذا الجزء لعرض النتائج)
+# Handle bulk checking request
 async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     names = [n.strip() for n in update.message.text.splitlines() if n.strip()]
     if not names:
@@ -228,7 +230,7 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Checking your list, please wait...", reply_markup=get_stop_and_back_keyboard())
 
-    all_results = [] # قائمة لتخزين كل النتائج
+    all_results = []
     for name in names:
         is_available = await check_username_availability(context, name)
         all_results.append({'username': name, 'available': is_available})
@@ -246,19 +248,19 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text_parts.append("😔 None of the provided usernames are available.")
 
-    # عرض الأسماء غير المتاحة (عدد محدود لتجنب رسائل طويلة جداً)
     if taken_names:
-        MAX_TAKEN_TO_DISPLAY = 20 # يمكن تعديل هذا الحد
+        MAX_TAKEN_TO_DISPLAY = 20
         text_parts.append(f"\n❌ Taken ({len(taken_names)}):")
         text_parts.append("\n".join(taken_names[:MAX_TAKEN_TO_DISPLAY]))
         if len(taken_names) > MAX_TAKEN_TO_DISPLAY:
             text_parts.append(f"...and {len(taken_names) - MAX_TAKEN_TO_DISPLAY} more taken names.")
+        else:
+            text_parts.append("\n".join(taken_names))
     else:
         text_parts.append("\n🎉 All provided usernames were found available! (Unlikely for large numbers)")
 
     final_text = "\n".join(text_parts)
     
-    # تحقق بسيط من طول الرسالة لتجنب تجاوز حد تلغرام
     if len(final_text) > 4000:
         final_text = "Result too long to display fully. Showing summary:\n"
         final_text += f"Total checked: {len(all_results)}\n"
@@ -267,7 +269,7 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_text += "\nConsider smaller lists for full display."
 
     await update.message.reply_text(final_text, reply_markup=get_stop_and_back_keyboard())
-    return INITIAL_MENU # العودة إلى القائمة الرئيسية بعد الانتهاء
+    return INITIAL_MENU
 
 # Cancel command handler
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -283,13 +285,11 @@ if __name__ == '__main__':
         states={
             INITIAL_MENU: [CallbackQueryHandler(button)],
             
-            # حالة طلب العدد
             ASK_COUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_count_input),
                 CallbackQueryHandler(button, pattern="^back$|^stop$")
             ],
 
-            # حالة طلب النمط
             ASK_PATTERN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_pattern),
                 CallbackQueryHandler(button, pattern="^back$|^stop$")
