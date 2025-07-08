@@ -5,7 +5,7 @@ import string
 import asyncio
 import warnings
 import io
-import re # Import regex module
+import re
 
 # Suppress the PTBUserWarning
 warnings.filterwarnings(
@@ -91,58 +91,6 @@ translations = {
         ),
         'flood_wait_message': "❗️ Bot paused due to Telegram's flood control. Retrying in {retry_after} seconds. Please wait, this might take a while for large requests.",
         'stopping_process_ack': "🛑 Stopping process... Displaying results shortly."
-    },
-    'ar': {
-        'welcome': "أهلاً بك في بوت RipperTek. الرجاء الاختيار:",
-        'generate_username_btn': "🔤 توليد اسم مستخدم",
-        'bulk_check_btn': "📄 فحص قائمة جماعية",
-        'how_to_btn': "❓ كيفية الاستخدام",
-        'language_btn': "🌐 اللغة / Language",
-        'english_btn': "English",
-        'arabic_btn': "العربية",
-        'language_selection': "الرجاء اختيار لغتك:",
-        'language_set': "تم تعيين اللغة إلى العربية.",
-        'how_many_names': "كم عدد الأسماء التي تود توليدها وفحصها (1-500)؟",
-        'invalid_number': "الرجاء إدخال رقم بين 1 و 500.",
-        'send_pattern': "أرسل نمطاً مثالياً (مثل `user_x_x_x` حيث يتم استبدال 'x' بأحرف/أرقام عشوائية). استخدم علامتي الاقتباس `\"\"` للأجزاء الثابتة (مثال: `\"my_name\"_x` سيبقي \"my_name\" كما هي):",
-        'invalid_pattern': "الرجاء توفير نمط صالح.",
-        'ask_delay': "أدخل تأخيراً بين عمليات الفحص بالثواني (مثال: 0.1 لـ 100 مللي ثانية، 1 لـ 1 ثانية). أدخل 0 لعدم وجود تأخير إضافي:",
-        'invalid_delay': "الرجاء إدخال رقم صالح للتأخير (مثال: 0.1, 1, 5).",
-        'searching_names': "جارٍ البحث عن {count} اسم مستخدم بناءً على '{pattern}'، الرجاء الانتظار...",
-        'checking_progress': "جارٍ الفحص... {current_checked} من {total_to_check} اسم تمت معالجته.\n✅ متاح: {available_count}\n❌ محجوز: {taken_count}\n\n(قد تتأخر التحديثات بسبب قيود تلغرام)",
-        'large_request_warning': "⚠️ تحذير: فحص عدد كبير من الأسماء قد يستغرق وقتاً طويلاً وقد يؤدي أحياناً إلى مهلة أو توقف إجباري بسبب قيود الطلبات من تلغرام.",
-        'checked_variations': "تم فحص {total_checked} اختلافاً للنمط '{pattern}'.\n",
-        'available_names': "✅ متاح ({count}):",
-        'no_available_names': "😔 لم يتم العثور على أسماء مستخدمين متاحة ضمن الأسماء التي تم توليدها.",
-        'taken_names': "\n❌ محجوز ({count}):",
-        'all_generated_available': "\n🎉 جميع الاختلافات التي تم توليدها وُجدت متاحة! (غير مرجح للأعداد الكبيرة)",
-        'result_too_long': "النتيجة طويلة جداً لعرضها بالكامل. عرض ملخص:\nإجمالي المفحوص: {total_checked}\n✅ متاح: {available_count}\n❌ محجوز: {taken_count}\n\nجرب عدداً أقل من التوليد لعرض القائمة بالكامل، أو استخدم الفحص الجماعي لقوائم محددة.",
-        'download_available_btn': "⬇️ تحميل الأسماء المتاحة",
-        'download_all_checked_btn': "⬇️ تحميل جميع الأسماء المفحوصة",
-        'back_btn': "⬅️ رجوع",
-        'stop_btn': "🛑 إيقاف وعرض النتائج",
-        'send_list_usernames': "أرسل قائمة بأسماء المستخدمين (اسم واحد في كل سطر):",
-        'no_usernames_provided': "الرجاء توفير قائمة بأسماء المستخدمين.",
-        'checking_list': "جارٍ فحص قائمتك، الرجاء الانتظار...",
-        'checked_list_usernames': "تم فحص {total_checked} اسم مستخدم من قائمتك.\n",
-        'none_available_in_list': "😔 لا يوجد أي من أسماء المستخدمين المتوفرة في القائمة التي قدمتها.",
-        'all_provided_available': "\n🎉 جميع أسماء المستخدمين المقدمة وُجدت متاحة! (غير مرجح للأعداد الكبيرة)",
-        'list_result_too_long': "النتيجة طويلة جداً لعرضها بالكامل. عرض ملخص:\nإجمالي المفحوص: {total_checked}\n✅ متاح: {available_count}\n❌ محجوز: {taken_count}\n\nالرجاء النظر في قوائم أصغر للعرض الكامل.",
-        'operation_cancelled': "❌ تم إلغاء العملية. اكتب /start للبدء من جديد.",
-        'no_names_to_save': "لا توجد أسماء لحفظها في {filename}.",
-        'failed_to_send_file': "فشل في إرسال الملف: {error}",
-        'how_to_content': (
-            "**كيف يعمل بوت RipperTek:**\n\n"
-            "يساعدك هذا البوت في العثور على أسماء مستخدمين متاحة في تيليجرام. "
-            "يمكنك إما:\n\n"
-            "1. **توليد أسماء مستخدمين:** أولاً، أخبرني كم عدد الأسماء التي تريد العثور عليها، ثم قدم نمطاً مثل `user_x_x_x` (حيث يتم استبدال 'x' بأحرف/أرقام عشوائية). استخدم علامتي الاقتباس `\"\"` للأجزاء الثابتة (مثال: `\"my_name\"_x` سيبقي \"my_name\" كما هي). سيقوم البوت بتوليد اختلافات وفحص توفرها.\n\n"
-            "2. **فحص قائمة جماعية:** أرسل قائمة بأسماء المستخدمين (اسم واحد في كل سطر) وسيقوم البوت بفحص كل اسم للتحقق من توفره.\n\n"
-            "**الهدف:** تبسيط عملية العثور على أسماء مستخدمين فريدة وغير مستخدمة في تيليجرام لقنواتك أو مجموعاتك أو ملفاتك الشخصية.\n\n"
-            "**ملاحظة هامة حول الدقة:** يتم إجراء فحوصات توفر اسم المستخدم باستخدام واجهة برمجة تطبيقات بوت تيليجرام (على وجه التحديد، عن طريق محاولة استرداد معلومات الدردشة). بينما هذه الطريقة دقيقة بشكل عام لأسماء المستخدمين العامة، **قد لا تكون دقيقة بنسبة 100% في جميع الحالات.** قد تظهر بعض أسماء المستخدمين متاحة من خلال البوت ولكنها في الواقع محجوزة بواسطة كيانات خاصة أو أنواع معينة من الحسابات، بسبب قيود في ما يمكن لواجهات برمجة تطبيقات البوت فحصه. **تأكد دائماً من التوفر مباشرة على تيليجرام عند محاولة تعيين اسم مستخدم.**"
-        ),
-        'flood_wait_message': "❗️ تم إيقاف البوت مؤقتاً بسبب قيود تلغرام على الطلبات. سيعاود المحاولة بعد {retry_after} ثانية. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة.",
-        'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً.",
-        'found_available_immediate': "✅ عثر على اسم متاح: {username}"
     }
 }
 
@@ -152,7 +100,7 @@ def get_text(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
     text = translations.get(lang, translations['en']).get(key, f"Translation missing for '{key}' in '{lang}'")
     return text.format(**kwargs)
 
-# --- Helper Function to create Main Menu Keyboard ---
+# --- Helper Functions for Keyboards ---
 def get_main_menu_keyboard(context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(get_text(context, 'generate_username_btn'), callback_data='generate')],
@@ -162,7 +110,6 @@ def get_main_menu_keyboard(context: ContextTypes.DEFAULT_TYPE):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Stop & Back Buttons Keyboard Helper ---
 def get_stop_and_back_keyboard(context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(get_text(context, 'back_btn'), callback_data='back')],
@@ -170,7 +117,6 @@ def get_stop_and_back_keyboard(context: ContextTypes.DEFAULT_TYPE):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Result Screen Buttons Helper ---
 def get_result_screen_keyboard(context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(get_text(context, 'download_available_btn'), callback_data='download_available')],
@@ -180,7 +126,6 @@ def get_result_screen_keyboard(context: ContextTypes.DEFAULT_TYPE):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Language Selection Keyboard ---
 def get_language_keyboard():
     keyboard = [
         [InlineKeyboardButton("English", callback_data='lang_en')],
@@ -189,93 +134,93 @@ def get_language_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# --- Constants for thresholds ---
+MAX_DISPLAY = 100
+UPDATE_INTERVAL_SECONDS = 1
+UPDATE_INTERVAL_COUNT = 1
 
-# --- Core Logic Functions (Moved up for definition order) ---
+# --- Helper function to validate pattern ---
+def is_valid_pattern(pattern: str) -> bool:
+    # Must contain at least one 'x' or quoted string
+    return bool(re.search(r'"[^"]+"|x', pattern))
 
-# Username generator logic
+# --- Helper to validate username ---
+def is_valid_username(username: str) -> bool:
+    return 5 <= len(username) <= 32 and username[0] != '_' and username.replace('_', '').isalnum()
+
+# --- Generate Usernames ---
 def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[str]:
     letters = string.ascii_lowercase + string.digits
     generated = set()
     attempts = 0
     max_attempts = num_variations_to_try * 10
-    
     PLACEHOLDER_CHAR = 'x'
 
-    # Find all parts: quoted strings or 'x' characters using regex
-    # It captures the content of the quotes in group 1, or the 'x' in group 2.
+    # Parse pattern
     parts = re.findall(r'"([^"]*)"|(x)', pattern)
-    
-    # Convert parts to a more usable format: list of (is_fixed, content)
     parsed_pattern = []
     for quoted_part, x_char in parts:
         if quoted_part:
-            parsed_pattern.append((True, quoted_part)) # Fixed part
+            parsed_pattern.append((True, quoted_part))
         elif x_char:
-            parsed_pattern.append((False, x_char)) # Placeholder 'x'
-
-    logger.info(f"Parsed pattern for generation: {parsed_pattern}")
+            parsed_pattern.append((False, x_char))
+    logger.info(f"Pattern parsed for generation: {parsed_pattern}")
 
     while len(generated) < num_variations_to_try and attempts < max_attempts:
         current_uname_list = []
-        
         for i, (is_fixed, content) in enumerate(parsed_pattern):
             if is_fixed:
                 current_uname_list.append(content)
-            else: # It's a placeholder 'x'
-                if i == 0: # First character, ensure it's a letter
+            else:
+                # For first placeholder, ensure starts with a letter
+                if i == 0 and not current_uname_list:
                     current_uname_list.append(random.choice(string.ascii_lowercase))
                 else:
                     current_uname_list.append(random.choice(letters))
-        
         final_uname = "".join(current_uname_list)
-
-        # Basic Telegram username validation
-        if 5 <= len(final_uname) <= 32 and final_uname[0] != '_' and final_uname.replace('_', '').isalnum():
+        if is_valid_username(final_uname):
             generated.add(final_uname)
         attempts += 1
-    
-    return [name for name in list(generated) if 5 <= len(name) <= 32 and name[0] != '_' and name.replace('_', '').isalnum()]
+    return list(generated)
 
-
-# Telegram API username availability checker
-async def check_username_availability(context: ContextTypes.DEFAULT_TYPE, username: str) -> tuple[bool, str, str | None]:
-    if not (5 <= len(username) <= 32 and username[0] != '_' and username.replace('_', '').isalnum()):
-        logger.warning(f"Invalid username format or length (pre-API check): {username}")
+# --- Check username availability ---
+async def check_username_availability(update: Update, context: ContextTypes.DEFAULT_TYPE, username: str) -> tuple[bool, str, str | None]:
+    if not is_valid_username(username):
+        logger.warning(f"Invalid username format (pre-API check): {username}")
         return False, username, None
-
     try:
         chat = await context.bot.get_chat(f"@{username}")
-        
         if chat.username and chat.username.lower() == username.lower():
-            logger.info(f"Username @{username} already exists (get_chat successful). Chat ID: {chat.id}")
+            logger.info(f"Username @{username} already exists.")
             return False, username, f"https://t.me/{chat.username}"
-        
         return False, username, None
     except TimedOut as e:
         retry_after = e.retry_after
         logger.warning(f"FLOODWAIT: Hit flood control for @{username}. Retrying in {retry_after} seconds.")
         try:
             await context.bot.send_message(
-                chat_id=context._chat_id,
+                chat_id=update.effective_chat.id,
                 text=get_text(context, 'flood_wait_message', retry_after=retry_after)
             )
-        except Exception as send_e:
-            logger.error(f"Failed to send flood_wait_message: {send_e}")
+        except Exception:
+            pass
         await asyncio.sleep(retry_after)
-        return await check_username_availability(context, username)
+        return await check_username_availability(update, context, username)
     except BadRequest as e:
         error_message = str(e).lower()
         if "username not found" in error_message or "chat not found" in error_message:
-            logger.info(f"Username @{username} is likely available (BadRequest: {error_message}).")
+            logger.info(f"Username @{username} is likely available.")
             return True, username, f"https://t.me/{username}"
-        logger.error(f"Telegram API BadRequest checking username {username}: {e}")
+        logger.error(f"Telegram API BadRequest: {e}")
     except Exception as e:
         logger.error(f"Unexpected error checking username {username}: {e}")
-
     return False, username, None
 
-# Function to display results (used for final and partial results)
-async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, all_results: list[dict], is_final: bool, pattern: str = None):
+# --- Display results ---
+async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, all_results: list[dict], pattern: str = None):
+    if context.user_data.get('stop_requested'):
+        await update.effective_chat.send_message(get_text(context, 'operation_cancelled'))
+        return
     available_names_info = [r for r in all_results if r['available']]
     taken_names_info = [r for r in all_results if not r['available']]
 
@@ -285,9 +230,8 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
     text_parts = []
     if pattern:
         text_parts.append(get_text(context, 'checked_variations', total_checked=len(all_results), pattern=pattern))
-    else: # For bulk list
+    else:
         text_parts.append(get_text(context, 'checked_list_usernames', total_checked=len(all_results)))
-
 
     def format_names_for_display(name_objects: list[dict]) -> list[str]:
         formatted = []
@@ -302,10 +246,9 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
         text_parts.append(get_text(context, 'available_names', count=len(available_names_info)))
         display_available = format_names_for_display(available_names_info)
         text_parts.append("\n".join(display_available))
-        # --- هذا هو السطر الذي تم تصحيحه ---
         if len(available_names_info) > context.user_data.get('num_to_generate_display', len(available_names_info)):
-            text_parts.append(f"...and {len(available_names_info) - context.user_data.get('num_to_generate_display', len(available_names_info))} more available names.")
-        # --- نهاية التعديل ---
+            remaining = len(available_names_info) - context.user_data.get('num_to_generate_display', len(available_names_info))
+            text_parts.append(f"...and {remaining} more available names.")
     else:
         text_parts.append(get_text(context, 'no_available_names'))
 
@@ -319,18 +262,13 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
     else:
         text_parts.append(get_text(context, 'all_generated_available'))
 
-
     final_text = "\n".join(text_parts)
-    
     if len(final_text) > 4000:
         final_text = get_text(context, 'result_too_long', total_checked=len(all_results), available_count=len(available_names_info), taken_count=len(taken_names_info))
-
     await update.effective_chat.send_message(final_text, parse_mode='Markdown', reply_markup=get_result_screen_keyboard(context))
 
+# --- Handlers ---
 
-# --- Main Handler Functions ---
-
-# Start command handler
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'language' not in context.user_data:
         context.user_data['language'] = 'en'
@@ -338,7 +276,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(get_text(context, 'welcome'), reply_markup=get_main_menu_keyboard(context))
     return INITIAL_MENU
 
-# Callback query handler (for all inline buttons)
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -363,12 +300,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await set_language_callback(update, context)
     elif query.data == 'download_available':
         if 'last_available_names' in context.user_data and context.user_data['last_available_names']:
-            await send_names_as_file(context, query.message.chat_id, context.user_data['last_available_names'], "available_usernames.txt")
+            await send_names_as_file(context, update.effective_chat.id, context.user_data['last_available_names'], "available_usernames.txt")
         else:
             await query.message.reply_text(get_text(context, 'no_names_to_save', filename="available_usernames.txt"))
         await query.edit_message_text(get_text(context, 'welcome'), reply_markup=get_main_menu_keyboard(context))
         return INITIAL_MENU
-
     elif query.data == 'download_all_checked':
         if 'last_all_checked_results' in context.user_data and context.user_data['last_all_checked_results']:
             formatted_results = []
@@ -377,154 +313,124 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 status_text = translations[context.user_data['language']].get(status_key, translations['en'][status_key])
                 status = status_text.replace('✅ ', '').replace(' ()', '').replace('\n❌ ', '')
                 formatted_results.append(f"{item['username']} ({status})")
-            await send_names_as_file(context, query.message.chat_id, formatted_results, "all_checked_usernames.txt")
+            await send_names_as_file(context, update.effective_chat.id, formatted_results, "all_checked_usernames.txt")
         else:
             await query.message.reply_text(get_text(context, 'no_names_to_save', filename="all_checked_usernames.txt"))
         await query.edit_message_text(get_text(context, 'welcome'), reply_markup=get_main_menu_keyboard(context))
         return INITIAL_MENU
-
     elif query.data == 'back':
         context.user_data['stop_requested'] = True
-        await query.edit_message_text(
-            get_text(context, 'welcome'),
-            reply_markup=get_main_menu_keyboard(context)
-        )
+        await query.edit_message_text(get_text(context, 'welcome'), reply_markup=get_main_menu_keyboard(context))
         return INITIAL_MENU
-    
     elif query.data == 'stop_processing':
         context.user_data['stop_requested'] = True
         await query.answer(text=get_text(context, 'stopping_process_ack'))
         return ConversationHandler.END
 
-
-# Handler for language selection callback
 async def set_language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     lang_code = query.data.split('_')[1]
     context.user_data['language'] = lang_code
-    
     await query.edit_message_text(get_text(context, 'language_set'), reply_markup=get_main_menu_keyboard(context))
     return INITIAL_MENU
 
-
-# Handler for count input
 async def handle_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         count = int(update.message.text.strip())
         if not (1 <= count <= 500):
             await update.message.reply_text(get_text(context, 'invalid_number'), reply_markup=get_stop_and_back_keyboard(context))
             return ASK_COUNT
-        
         context.user_data['num_to_generate_display'] = count
         await update.message.reply_text(get_text(context, 'send_pattern'), parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard(context))
         return ASK_PATTERN
-    except ValueError:
+    except:
         await update.message.reply_text(get_text(context, 'invalid_number'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_COUNT
 
-# Handler for pattern input
 async def handle_pattern_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pattern = update.message.text.strip()
-    if not pattern:
+    if not pattern or not is_valid_pattern(pattern):
         await update.message.reply_text(get_text(context, 'invalid_pattern'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_PATTERN
-    
     context.user_data['pattern'] = pattern
     await update.message.reply_text(get_text(context, 'ask_delay'), reply_markup=get_stop_and_back_keyboard(context))
     return ASK_DELAY
 
-# Handler for delay input (This handler now directly initiates the main processing loop)
-async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE): # Corrected 'Context' to 'context'
+async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         delay = float(update.message.text.strip())
         if delay < 0:
             raise ValueError
         context.user_data['check_delay'] = delay
-        
-        # --- Start of the main processing logic (moved from ask_pattern) ---
+
+        loop = asyncio.get_running_loop()
+        last_update_time = loop.time()
+
         pattern = context.user_data['pattern']
         num_to_display = context.user_data.get('num_to_generate_display', 20)
-        check_delay = context.user_data.get('check_delay', 0.05)
 
         warning_text = ""
-        if num_to_display > 100:
+        if num_to_display > MAX_DISPLAY:
             warning_text = get_text(context, 'large_request_warning') + "\n\n"
 
-        initial_message = await update.message.reply_text(warning_text + get_text(context, 'searching_names', count=num_to_display, pattern=pattern), parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard(context))
+        initial_message = await update.message.reply_text(
+            warning_text + get_text(context, 'searching_names', count=num_to_display, pattern=pattern),
+            parse_mode='Markdown',
+            reply_markup=get_stop_and_back_keyboard(context)
+        )
         context.user_data['progress_message_id'] = initial_message.message_id
         context.user_data['stop_requested'] = False
 
         raw_usernames = generate_usernames(pattern, num_to_display)
-        logger.info(f"DEBUG_GENERATE: Pattern: '{pattern}', Generated {len(raw_usernames)} raw names. First 10: {raw_usernames[:10]}")
-        
+        logger.info(f"Generated {len(raw_usernames)} usernames.")
+
         all_results = []
         available_count = 0
         taken_count = 0
-        last_update_time = asyncio.get_event_loop().time()
-        
-        UPDATE_INTERVAL_SECONDS = 1 
-        UPDATE_INTERVAL_COUNT = 1 
 
         for i, uname in enumerate(raw_usernames):
             if context.user_data.get('stop_requested'):
-                logger.info("Stop requested by user. Breaking loop.")
                 break
-
-            is_available, username_str, link = await check_username_availability(context, uname)
+            is_available, username_str, link = await check_username_availability(update, context, uname)
             all_results.append({'username': username_str, 'available': is_available, 'link': link})
             if is_available:
-                available_count += 1
                 try:
-                    if link:
-                        await update.effective_chat.send_message(get_text(context, 'found_available_immediate', username=f"[`@{username_str}`]({link})"), parse_mode='Markdown')
-                    else:
-                        await update.effective_chat.send_message(get_text(context, 'found_available_immediate', username=f"`@{username_str}`"), parse_mode='Markdown')
-                except BadRequest as e:
-                    logger.warning(f"Failed to send immediate available name update: {e}")
-                except Exception as e:
-                    logger.error(f"Unexpected error sending immediate available name update: {e}")
+                    await update.effective_chat.send_message(
+                        get_text(context, 'found_available_immediate', username=f"`@{username_str}`"),
+                        parse_mode='Markdown'
+                    )
+                except:
+                    pass
+                available_count += 1
             else:
                 taken_count += 1
 
-            current_time = asyncio.get_event_loop().time()
+            current_time = loop.time()
             if (i + 1) % UPDATE_INTERVAL_COUNT == 0 or (current_time - last_update_time) >= UPDATE_INTERVAL_SECONDS:
                 try:
-                    await context.bot.edit_message_text(
+                    await update.effective_chat.edit_message_text(
                         chat_id=update.effective_chat.id,
                         message_id=context.user_data['progress_message_id'],
-                        text=warning_text + get_text(context, 'checking_progress', 
-                                                    current_checked=i+1, 
-                                                    total_to_check=len(raw_usernames),
-                                                    available_count=available_count,
-                                                    taken_count=taken_count,
-                                                    remaining_count=len(raw_usernames) - (i+1)),
+                        text=get_text(context, 'checking_progress', 
+                            current_checked=i+1,
+                            total_to_check=len(raw_usernames),
+                            available_count=available_count,
+                            taken_count=taken_count,
+                            remaining_count=len(raw_usernames) - (i+1)),
                         parse_mode='Markdown',
                         reply_markup=get_stop_and_back_keyboard(context)
                     )
                     last_update_time = current_time
-                except BadRequest as e:
-                    logger.warning(f"Failed to edit progress message (likely rate limit or formatting): {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
-                except Exception as e:
-                    logger.error(f"Unexpected error when editing progress message: {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
-                
-            await asyncio.sleep(check_delay)
+                except:
+                    pass
+            await asyncio.sleep(context.user_data['check_delay'])
 
-        await display_results(update, context, all_results, is_final=True, pattern=pattern)
+        await display_results(update, context, all_results, pattern=pattern)
         return INITIAL_MENU
-        # --- End of main processing logic ---
-
-    except ValueError:
+    except:
         await update.message.reply_text(get_text(context, 'invalid_delay'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_DELAY
 
-# This function is now ONLY for handling pattern input and moving to ASK_DELAY.
-# The main processing logic is moved to handle_delay_input.
-# It's called when the user sends a pattern.
-async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pass
-
-
-# Handle bulk checking request (modified to match new processing flow)
 async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     names = [n.strip() for n in update.message.text.splitlines() if n.strip()]
     if not names:
@@ -535,92 +441,78 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(names) > 100:
         warning_text = get_text(context, 'large_request_warning') + "\n\n"
 
-    context.user_data['check_delay'] = 0.05 # Default delay for bulk check
-
+    context.user_data['check_delay'] = 0.05
     initial_message = await update.message.reply_text(warning_text + get_text(context, 'checking_list'), parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard(context))
     context.user_data['progress_message_id'] = initial_message.message_id
     context.user_data['stop_requested'] = False
 
+    loop = asyncio.get_running_loop()
+    last_update_time = loop.time()
+
     all_results = []
     available_count = 0
     taken_count = 0
-    last_update_time = asyncio.get_event_loop().time()
-    
-    UPDATE_INTERVAL_SECONDS = 1
-    UPDATE_INTERVAL_COUNT = 1
 
     for i, name in enumerate(names):
         if context.user_data.get('stop_requested'):
-            logger.info("Stop requested by user. Breaking loop.")
             break
-
-        is_available, username_str, link = await check_username_availability(context, name)
+        is_available, username_str, link = await check_username_availability(update, context, name)
         all_results.append({'username': username_str, 'available': is_available, 'link': link})
         if is_available:
-            available_count += 1
             try:
-                if link:
-                    await update.effective_chat.send_message(get_text(context, 'found_available_immediate', username=f"[`@{username_str}`]({link})"), parse_mode='Markdown')
-                else:
-                    await update.effective_chat.send_message(get_text(context, 'found_available_immediate', username=f"`@{username_str}`"), parse_mode='Markdown')
-            except BadRequest as e:
-                logger.warning(f"Failed to send immediate available name update: {e}")
-            except Exception as e:
-                logger.error(f"Unexpected error sending immediate name update: {e}")
+                await update.effective_chat.send_message(
+                    get_text(context, 'found_available_immediate', username=f"`@{username_str}`"),
+                    parse_mode='Markdown'
+                )
+            except:
+                pass
+            available_count += 1
         else:
             taken_count += 1
 
-        current_time = asyncio.get_event_loop().time()
+        current_time = loop.time()
         if (i + 1) % UPDATE_INTERVAL_COUNT == 0 or (current_time - last_update_time) >= UPDATE_INTERVAL_SECONDS:
             try:
-                await context.bot.edit_message_text(
+                await update.effective_chat.edit_message_text(
                     chat_id=update.effective_chat.id,
                     message_id=context.user_data['progress_message_id'],
-                    text=warning_text + get_text(context, 'checking_progress', 
-                                                current_checked=i+1, 
-                                                total_to_check=len(names),
-                                                available_count=available_count,
-                                                taken_count=taken_count,
-                                                remaining_count=len(names) - (i+1)),
+                    text=get_text(context, 'checking_progress', 
+                        current_checked=i+1,
+                        total_to_check=len(names),
+                        available_count=available_count,
+                        taken_count=taken_count,
+                        remaining_count=len(names) - (i+1)),
                     parse_mode='Markdown',
                     reply_markup=get_stop_and_back_keyboard(context)
                 )
                 last_update_time = current_time
-            except BadRequest as e:
-                logger.warning(f"Failed to edit progress message (likely rate limit or formatting): {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
-            except Exception as e:
-                logger.error(f"Unexpected error when editing progress message: {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
-
+            except:
+                pass
         await asyncio.sleep(context.user_data['check_delay'])
 
     await display_results(update, context, all_results, is_final=True)
     return INITIAL_MENU
 
-# Cancel command handler
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['stop_requested'] = True
     await update.message.reply_text(get_text(context, 'operation_cancelled'), reply_markup=get_main_menu_keyboard(context))
     return ConversationHandler.END
 
-# Helper function to send a list of names as a text file
 async def send_names_as_file(context: ContextTypes.DEFAULT_TYPE, chat_id: int, names_list: list[str], filename: str):
     if not names_list:
         await context.bot.send_message(chat_id=chat_id, text=get_text(context, 'no_names_to_save', filename=filename))
         return
-
     file_content = "\n".join(names_list)
     file_stream = io.BytesIO(file_content.encode('utf-8'))
     file_stream.name = filename
-
     try:
         await context.bot.send_document(chat_id=chat_id, document=InputFile(file_stream))
         logger.info(f"Sent {filename} to chat {chat_id}")
     except Exception as e:
-        logger.error(f"Failed to send document {filename} to chat {chat_id}: {e}")
+        logger.error(f"Failed to send {filename}: {e}")
         await context.bot.send_message(chat_id=chat_id, text=get_text(context, 'failed_to_send_file', error=str(e)))
 
-
-# Main application setup and run
+# --- Main application setup ---
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -628,22 +520,18 @@ if __name__ == '__main__':
         entry_points=[CommandHandler("start", start)],
         states={
             INITIAL_MENU: [CallbackQueryHandler(button)],
-            
             ASK_COUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_count_input),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
             ],
-
             ASK_PATTERN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pattern_input),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
             ],
-            
             ASK_DELAY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
             ],
-
             BULK_LIST: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, bulk_list),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
@@ -666,7 +554,6 @@ if __name__ == '__main__':
 
     PORT = int(os.getenv("PORT", "8080"))
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-    
     WEBHOOK_SECRET_PATH = os.getenv("WEBHOOK_SECRET_PATH", f"webhook_{os.urandom(16).hex()}")
     logger.info(f"DEBUG: WEBHOOK_SECRET_PATH being used: {WEBHOOK_SECRET_PATH}")
 
