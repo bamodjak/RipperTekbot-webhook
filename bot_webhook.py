@@ -6,7 +6,7 @@ import asyncio
 import warnings
 import io
 import re
-import httpx # Added httpx for API calls
+import httpx 
 
 # Suppress the PTBUserWarning
 warnings.filterwarnings(
@@ -85,7 +85,7 @@ translations = {
             "**How RipperTek Bot Works:**\n\n"
             "This bot helps you find available Telegram usernames. "
             "You can either:\n\n"
-            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_x_x_x` (where 'x' is a placeholder that will be replaced by random chars/digits). Use double quotes `\"\"` for fixed parts (e.g., `\"my_name\"_x` will keep \"my_name\" as is). The bot will generate variations and check their availability.\n\n"
+            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_x_x_x` (where 'x' is a placeholder that will be replaced by random letters/digits). Use double quotes `\"\"` for fixed parts (e.g., `\"my_name\"_x` will keep \"my_name\" as is). The bot will generate variations and check their availability.\n\n"
             "2. **Bulk Check List:** Send a list of usernames (one per line) and the bot will check each one for availability.\n\n"
             "**Aim:** To simplify the process of finding unique and unused Telegram usernames for your channels, groups, or personal profiles.\n\n"
             "**Important Note on Accuracy:** Username availability checks are performed using Telegram's bot API (specifically, by attempting to retrieve chat information). While this method is generally accurate for public usernames, **it may not be 100% precise for all cases.** Some usernames might appear available through the bot but are actually taken by private entities or certain types of accounts, due to limitations in what bot APIs can check. **Always confirm availability directly on Telegram when attempting to set a username.**"
@@ -156,6 +156,7 @@ MAX_USERNAME_LENGTH = 32
 PLACEHOLDER_CHAR = 'x'      
 
 # A list of fallback words in case API fails or returns empty (English)
+# Expanded list with more common/username-friendly words
 FALLBACK_WORDS_EN = [
     "user", "admin", "tech", "pro", "game", "bot", "tool", "alpha", "beta",
     "master", "geek", "coder", "dev", "creator", "digital", "online", "system",
@@ -164,13 +165,28 @@ FALLBACK_WORDS_EN = [
     "swift", "spark", "glitch", "echo", "cipher", "matrix", "nexus", "orbit",
     "pulse", "quantum", "reboot", "stellar", "titan", "vortex", "zephyr", "byte",
     "liar", "love", "lion", "light", "lucky", "logic", "lunar", "limit", "level",
-    "lab", "link", "leaf", "lark", "lava", "lazy", "leap", "lens", "loop", "lore"
+    "lab", "link", "leaf", "lark", "lava", "lazy", "leap", "lens", "loop", "lore",
+    "blog", "chat", "club", "data", "deep", "dome", "epic", "fire", "flow", "force",
+    "geek", "gold", "grid", "hero", "hive", "icon", "idea", "jolt", "jump", "king",
+    "kraft", "laser", "link", "loom", "magic", "mega", "meta", "mind", "mirage", "myth",
+    "nebula", "net", "night", "nova", "omega", "open", "optic", "ozone", "peak", "pixel",
+    "power", "prime", "pro", "pulse", "quad", "quantum", "quest", "radar", "raid", "rank",
+    "reach", "relic", "rise", "robot", "rouge", "royal", "ruby", "rush", "saber", "sage",
+    "scan", "scope", "secret", "sense", "shadow", "shell", "signal", "silver", "sky", "smart",
+    "solid", "soul", "space", "spark", "speed", "sphere", "spirit", "star", "steel", "storm",
+    "summit", "super", "swift", "synapse", "synergy", "tact", "tag", "talk", "tech", "theta",
+    "tidal", "tiger", "time", "titan", "token", "top", "track", "trail", "trap", "trend",
+    "trix", "turbo", "ultra", "unity", "urban", "valor", "vanguard", "vertex", "vibe", "vision",
+    "vital", "void", "volt", "vortex", "wave", "web", "wing", "wise", "wolf", "xeno",
+    "yeti", "yield", "zero", "zeta", "zone", "zoom"
 ]
 
 # A list of fallback words in case API fails or returns empty (Arabic)
 FALLBACK_WORDS_AR = [
     "مستخدم", "مسؤول", "تقنية", "محترف", "لعبة", "بوت", "أداة", "مبدع", "رقمي",
-    "خبير", "عالم", "نظام", "أفق", "نجم", "بوابة", "روح", "قوة", "فارس"
+    "خبير", "عالم", "نظام", "أفق", "نجم", "بوابة", "روح", "قوة", "فارس", "بطل",
+    "ذكي", "سريع", "جديد", "كبير", "قناة", "مجموعة", "مستقبل", "حياة", "علم",
+    "فن", "نور", "صديق", "نصيحة", "فكرة", "سر", "حرية", "نجاح", "أمل", "طموح"
 ]
 
 
@@ -251,7 +267,7 @@ def is_valid_pattern_for_generation(pattern: str) -> bool:
 
 # Username generator logic (Revised for better length control AND word insertion with prefixes)
 async def generate_usernames(pattern: str, num_variations_to_try: int = 200, context: ContextTypes.DEFAULT_TYPE = None) -> list[str]:
-    letters_digits = string.ascii_lowercase + string.digits
+    letters_digits = string.ascii_lowercase + string.digits + '_' # Include underscore for flexibility
     generated = set()
     attempts = 0
     max_attempts = num_variations_to_try * 20 
@@ -306,31 +322,36 @@ async def generate_usernames(pattern: str, num_variations_to_try: int = 200, con
                 current_username_parts.append(content)
             elif part_type == 'placeholder_block':
                 block_len = content # This is the number of 'x's in the block
-                
-                # Check if the previous part was a fixed string, AND we haven't used a seed word yet for an 'x' block.
-                # This ensures we try to make a word from the fixed prefix + x-block only once, for the first relevant x-block.
-                previous_part_was_fixed = (idx > 0 and parsed_pattern_parts[idx-1][0] == 'fixed')
-                
-                # Only attempt smart word generation for the first relevant 'x' block
-                if not seed_word_used_for_first_x_block and current_seed_words:
-                    chosen_word_segment = None
+
+                # Check if this is the first relevant 'x' block where we should try to insert a word
+                # (first 'x' block overall, or first 'x' block immediately following a fixed part)
+                is_first_relevant_x_block = (idx == 0 or (idx > 0 and parsed_pattern_parts[idx-1][0] == 'fixed')) and \
+                                            not seed_word_used_for_first_x_block and \
+                                            current_seed_words
+                                            
+                if is_first_relevant_x_block:
+                    chosen_word = None
                     
                     prefix_for_word_gen = ""
-                    if previous_part_was_fixed:
+                    if idx > 0 and parsed_pattern_parts[idx-1][0] == 'fixed':
                         prefix_for_word_gen = parsed_pattern_parts[idx-1][1]
-                        # Temporarily remove the fixed prefix from current_username_parts
-                        # as the chosen_word will include it.
+                        # Remove the last added fixed part from current_username_parts
+                        # as the chosen_word will replace fixed+x-block combination
                         if current_username_parts and current_username_parts[-1] == prefix_for_word_gen:
                             current_username_parts.pop()
                     
-                    suitable_words = []
+                    # Filter words from seed list
+                    candidate_words_for_block = []
                     for word in current_seed_words:
                         word_lower = word.lower()
                         prefix_lower = prefix_for_word_gen.lower()
 
                         if word_lower.startswith(prefix_lower) and word[0].isalpha():
-                            # Calculate the length of the *remaining* part of the word needed for this x-block
+                            # Calculate the length of the *remainder* of the word needed for this x-block
                             remaining_word_len_from_word = len(word) - len(prefix_for_word_gen)
+                            
+                            # Check if the remaining part fits within the block_len
+                            # AND if the overall resulting username would be valid length.
                             
                             # Calculate min length of remaining pattern parts *after* this x-block
                             remaining_pattern_min_len = 0
@@ -340,42 +361,57 @@ async def generate_usernames(pattern: str, num_variations_to_try: int = 200, con
                                 elif subsequent_part_type == 'placeholder_block':
                                     remaining_pattern_min_len += 1 # Assume minimum 1 char for subsequent 'x' blocks
 
-                            # Hypothetical total length if this word is used (full word, including prefix)
-                            hypothetical_total_len = len("".join(current_username_parts)) + len(word) + remaining_pattern_min_len
-
-                            # Check if the overall username length would be valid AND
-                            # if the 'x' part of the word fits within the allocated block_len.
-                            if MIN_USERNAME_LENGTH <= hypothetical_total_len <= MAX_USERNAME_LENGTH and \
-                               remaining_word_len_from_word <= block_len:
-                                suitable_words.append(word)
+                            # Hypothetical total length if this word is used (full word, including prefix, plus fill for x-block)
+                            hypothetical_total_len = len("".join(current_username_parts)) + len(word) + max(0, block_len - remaining_word_len_from_word) + remaining_pattern_min_len
+                            
+                            if MIN_USERNAME_LENGTH <= hypothetical_total_len <= MAX_USERNAME_LENGTH:
+                                # Prioritize words where the *remainder* fits the block_len best
+                                candidate_words_for_block.append((abs(remaining_word_len_from_word - block_len), word))
                     
-                    if suitable_words:
-                        # Prioritize words that use most of the block_len for the 'x' part
-                        suitable_words.sort(key=lambda w: len(w) - len(prefix_for_word_gen), reverse=True)
-                        chosen_word = random.choice([w for w in suitable_words if (len(w) - len(prefix_for_word_gen)) == (len(suitable_words[0]) - len(prefix_for_word_gen))])
-                        
+                    if candidate_words_for_block:
+                        candidate_words_for_block.sort(key=lambda x: x[0]) # Sort by closeness of remainder length to block_len
+                        # Pick a random word among those with the best fit
+                        best_fit_diff = candidate_words_for_block[0][0]
+                        best_fit_words = [w for diff, w in candidate_words_for_block if diff == best_fit_diff]
+                        chosen_word = random.choice(best_fit_words)
+                    elif current_seed_words: # Fallback: if no *prefix-matching* word fits, try any word from seeds
+                        # But ensure it allows for a valid username to be formed
+                        any_valid_start_words = []
+                        for word in current_seed_words:
+                            if word[0].isalpha(): # Word must start with a letter
+                                hypothetical_total_len = len("".join(current_username_parts)) + len(word) + remaining_pattern_min_len
+                                if MIN_USERNAME_LENGTH <= hypothetical_total_len <= MAX_USERNAME_LENGTH:
+                                    any_valid_start_words.append(word)
+                        if any_valid_start_words:
+                            chosen_word = random.choice(any_valid_start_words)
+
+
+                    if chosen_word:
                         current_username_parts.append(chosen_word)
-                        seed_word_used_for_first_x_block = True
+                        seed_word_used_for_first_x_block = True # Mark that a seed word has been used
                         
-                        # Pad the rest of THIS placeholder block if the word's remainder is shorter than block_len
+                        # Fill the rest of THIS placeholder block if the word's remainder is shorter than block_len
                         chars_to_fill_in_block = block_len - (len(chosen_word) - len(prefix_for_word_gen))
                         if chars_to_fill_in_block > 0:
                             for _ in range(chars_to_fill_in_block):
                                 current_username_parts.append(random.choice(letters_digits))
-                        
+                        # If chosen_word is longer than block_len (relative to its remainder),
+                        # it effectively 'overfills' this block, and no padding is done.
+                        # The overall `is_valid_username` check will enforce MAX_USERNAME_LENGTH.
                     else:
-                        # Fallback: if no suitable word found, fill the block with random characters.
+                        # Fallback: if no word chosen, fill the block with random characters.
                         # If a prefix was popped, add it back before filling with random chars.
                         if previous_part_was_fixed:
                             current_username_parts.append(prefix_for_word_gen)
                             
                         for _ in range(block_len):
-                            if idx == 0 and not current_username_parts: # Ensure first char is a letter if it's the very beginning
+                            # Ensure it starts with a letter if it's the very first char of the username being built
+                            if idx == 0 and not current_username_parts: 
                                 current_username_parts.append(random.choice(string.ascii_lowercase))
                             else:
                                 current_username_parts.append(random.choice(letters_digits))
 
-                else: # Not the first 'x' block, or no seed word was used for first relevant 'x' block
+                else: # Not the first 'x' block, or no seed word was used for any 'x' block yet
                     # Fill entire block with random characters
                     for _ in range(block_len):
                         current_username_parts.append(random.choice(letters_digits))
@@ -390,7 +426,7 @@ async def generate_usernames(pattern: str, num_variations_to_try: int = 200, con
     return list(generated)
 
 
-# Telegram API username availability checker
+# Telegram API username availability checker (Conservative check for 'Taken' status)
 async def check_username_availability(update: Update, context: ContextTypes.DEFAULT_TYPE, username: str) -> tuple[bool, str, str | None]:
     if not is_valid_username(username):
         logger.warning(f"Invalid username format (pre-API check): {username}")
@@ -398,11 +434,11 @@ async def check_username_availability(update: Update, context: ContextTypes.DEFA
 
     try:
         chat = await context.bot.get_chat(f"@{username}")
-
+        
         # If get_chat succeeds and returns ANY chat object, the username is considered taken/reserved.
         # It doesn't matter if chat.username is None or doesn't match perfectly.
-        # If Telegram gave us *any* info, it's not available for new registration.
-        logger.info(f"Username @{username} responded with chat info (ID: {chat.id}, type: {chat.type}), so it's taken/reserved.")
+        # If Telegram gave us *any* info, it's not available for new public registration.
+        logger.info(f"Username @{username} recognized by Telegram API (Chat ID: {chat.id}, Type: {chat.type}). Considered taken/reserved.")
         return False, username, f"https://t.me/{chat.username}" if chat.username else None 
 
     except TimedOut as e:
@@ -419,14 +455,16 @@ async def check_username_availability(update: Update, context: ContextTypes.DEFA
         return await check_username_availability(update, context, username)
     except BadRequest as e:
         error_message = str(e).lower()
+        # Explicitly check for 'not found' message to declare available.
+        # Any other BadRequest means it's NOT available (e.g., invalid format, reserved, restricted).
         if "username not found" in error_message or "chat not found" in error_message:
-            logger.info(f"Username @{username} is likely available.")
+            logger.info(f"Username @{username} is likely available (BadRequest: '{error_message}').")
             return True, username, f"https://t.me/{username}"
-        
-        logger.error(f"Telegram API BadRequest for {username}: {e}")
-        return False, username, None 
+        else:
+            logger.error(f"Telegram API BadRequest for {username} (NOT available, reason: '{error_message}').")
+            return False, username, None 
     except Exception as e:
-        logger.error(f"Unexpected error checking username {username}: {e}")
+        logger.error(f"Unexpected error checking username {username} (assuming NOT available): {e}")
         return False, username, None 
 
 # Function to display results
