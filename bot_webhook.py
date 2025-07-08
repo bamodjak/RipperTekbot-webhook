@@ -5,7 +5,7 @@ import string
 import asyncio
 import warnings
 import io
-import re
+import re # Import regex module
 
 # Suppress the PTBUserWarning
 warnings.filterwarnings(
@@ -53,7 +53,7 @@ translations = {
         'language_set': "Language set to English.",
         'how_many_names': "How many names would you like to generate and check (1-500)?",
         'invalid_number': "Please enter a number between 1 and 500.",
-        'send_pattern': "Send a sample pattern (e.g., `user_x_x_x` where 'x' is replaced by random chars/digits). Use double quotes `\"\"` for fixed parts (e.g., `\"my_name\"_x`):",
+        'send_pattern': "Send a sample pattern (e.g., `user_x_x_x` where 'x' is replaced by random chars/digits). For fixed parts, enclose them in double quotes (e.g., `\"my_name\"_x`):",
         'invalid_pattern': "Please provide a valid pattern.",
         'ask_delay': "Enter a delay between checks in seconds (e.g., 0.1 for 100ms, 1 for 1s). Enter 0 for no additional delay:",
         'invalid_delay': "Please enter a valid number for delay (e.g., 0.1, 1, 5).",
@@ -84,13 +84,65 @@ translations = {
             "**How RipperTek Bot Works:**\n\n"
             "This bot helps you find available Telegram usernames. "
             "You can either:\n\n"
-            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_x_x_x` (where 'x' is a placeholder that will be replaced by random letters/digits). Use double quotes `\"\"` for fixed parts (e.g., `\"my_name\"_x` will keep \"my_name\" as is). The bot will generate variations and check their availability.\n\n"
+            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_x_x_x` (where 'x' is a placeholder that will be replaced by random letters/digits). For fixed parts, enclose them in double quotes (e.g., `\"my_name\"_x` will keep \"my_name\" as is). The bot will generate variations and check their availability.\n\n"
             "2. **Bulk Check List:** Send a list of usernames (one per line) and the bot will check each one for availability.\n\n"
             "**Aim:** To simplify the process of finding unique and unused Telegram usernames for your channels, groups, or personal profiles.\n\n"
             "**Important Note on Accuracy:** Username availability checks are performed using Telegram's bot API (specifically, by attempting to retrieve chat information). While this method is generally accurate for public usernames, **it may not be 100% precise for all cases.** Some usernames might appear available through the bot but are actually taken by private entities or certain types of accounts, due to limitations in what bot APIs can check. **Always confirm availability directly on Telegram when attempting to set a username.**"
         ),
         'flood_wait_message': "❗️ Bot paused due to Telegram's flood control. Retrying in {retry_after} seconds. Please wait, this might take a while for large requests.",
         'stopping_process_ack': "🛑 Stopping process... Displaying results shortly."
+    },
+    'ar': {
+        'welcome': "أهلاً بك في بوت RipperTek. الرجاء الاختيار:",
+        'generate_username_btn': "🔤 توليد اسم مستخدم",
+        'bulk_check_btn': "📄 فحص قائمة جماعية",
+        'how_to_btn': "❓ كيفية الاستخدام",
+        'language_btn': "🌐 اللغة / Language",
+        'english_btn': "English",
+        'arabic_btn': "العربية",
+        'language_selection': "الرجاء اختيار لغتك:",
+        'language_set': "تم تعيين اللغة إلى العربية.",
+        'how_many_names': "كم عدد الأسماء التي تود توليدها وفحصها (1-500)؟",
+        'invalid_number': "الرجاء إدخال رقم بين 1 و 500.",
+        'send_pattern': "أرسل نمطاً مثالياً (مثل `user_x_x_x` حيث يتم استبدال 'x' بأحرف/أرقام عشوائية). استخدم علامتي الاقتباس `\"\"` للأجزاء الثابتة (مثال: `\"my_name\"_x` سيبقي \"my_name\" كما هي):",
+        'invalid_pattern': "الرجاء توفير نمط صالح.",
+        'ask_delay': "أدخل تأخيراً بين عمليات الفحص بالثواني (مثال: 0.1 لـ 100 مللي ثانية، 1 لـ 1 ثانية). أدخل 0 لعدم وجود تأخير إضافي:",
+        'invalid_delay': "الرجاء إدخال رقم صالح للتأخير (مثال: 0.1, 1, 5).",
+        'searching_names': "جارٍ البحث عن {count} اسم مستخدم بناءً على '{pattern}'، الرجاء الانتظار...",
+        'checking_progress': "جارٍ الفحص... {current_checked} من {total_to_check} اسم تمت معالجته.\n✅ متاح: {available_count}\n❌ محجوز: {taken_count}\n\n(قد تتأخر التحديثات بسبب قيود تلغرام)",
+        'large_request_warning': "⚠️ تحذير: فحص عدد كبير من الأسماء قد يستغرق وقتاً طويلاً وقد يؤدي أحياناً إلى مهلة أو توقف إجباري بسبب قيود الطلبات من تلغرام.",
+        'checked_variations': "تم فحص {total_checked} اختلافاً للنمط '{pattern}'.\n",
+        'available_names': "✅ متاح ({count}):",
+        'no_available_names': "😔 لم يتم العثور على أسماء مستخدمين متاحة ضمن الأسماء التي تم توليدها.",
+        'taken_names': "\n❌ محجوز ({count}):",
+        'all_generated_available': "\n🎉 جميع الاختلافات التي تم توليدها وُجدت متاحة! (غير مرجح للأعداد الكبيرة)",
+        'result_too_long': "النتيجة طويلة جداً لعرضها بالكامل. عرض ملخص:\nإجمالي المفحوص: {total_checked}\n✅ متاح: {available_count}\n❌ محجوز: {taken_count}\n\nجرب عدداً أقل من التوليد لعرض القائمة بالكامل، أو استخدم الفحص الجماعي لقوائم محددة.",
+        'download_available_btn': "⬇️ تحميل الأسماء المتاحة",
+        'download_all_checked_btn': "⬇️ تحميل جميع الأسماء المفحوصة",
+        'back_btn': "⬅️ رجوع",
+        'stop_btn': "🛑 إيقاف وعرض النتائج",
+        'send_list_usernames': "أرسل قائمة بأسماء المستخدمين (اسم واحد في كل سطر):",
+        'no_usernames_provided': "الرجاء توفير قائمة بأسماء المستخدمين.",
+        'checking_list': "جارٍ فحص قائمتك، الرجاء الانتظار...",
+        'checked_list_usernames': "تم فحص {total_checked} اسم مستخدم من قائمتك.\n",
+        'none_available_in_list': "😔 لا يوجد أي من أسماء المستخدمين المتوفرة في القائمة التي قدمتها.",
+        'all_provided_available': "\n🎉 جميع أسماء المستخدمين المقدمة وُجدت متاحة! (غير مرجح للأعداد الكبيرة)",
+        'list_result_too_long': "النتيجة طويلة جداً لعرضها بالكامل. عرض ملخص:\nإجمالي المفحوص: {total_checked}\n✅ متاح: {available_count}\n❌ محجوز: {taken_count}\n\nالرجاء النظر في قوائم أصغر للعرض الكامل.",
+        'operation_cancelled': "❌ تم إلغاء العملية. اكتب /start للبدء من جديد.",
+        'no_names_to_save': "لا توجد أسماء لحفظها في {filename}.",
+        'failed_to_send_file': "فشل في إرسال الملف: {error}",
+        'how_to_content': (
+            "**كيف يعمل بوت RipperTek:**\n\n"
+            "يساعدك هذا البوت في العثور على أسماء مستخدمين متاحة في تيليجرام. "
+            "يمكنك إما:\n\n"
+            "1. **توليد أسماء مستخدمين:** أولاً، أخبرني كم عدد الأسماء التي تريد العثور عليها، ثم قدم نمطاً مثل `user_x_x_x` (حيث يتم استبدال 'x' بأحرف/أرقام عشوائية). استخدم علامتي الاقتباس `\"\"` للأجزاء الثابتة (مثال: `\"my_name\"_x` سيبقي \"my_name\" كما هي). سيقوم البوت بتوليد اختلافات وفحص توفرها.\n\n"
+            "2. **فحص قائمة جماعية:** أرسل قائمة بأسماء المستخدمين (اسم واحد في كل سطر) وسيقوم البوت بفحص كل اسم للتحقق من توفره.\n\n"
+            "**الهدف:** تبسيط عملية العثور على أسماء مستخدمين فريدة وغير مستخدمة في تيليجرام لقنواتك أو مجموعاتك أو ملفاتك الشخصية.\n\n"
+            "**ملاحظة هامة حول الدقة:** يتم إجراء فحوصات توفر اسم المستخدم باستخدام واجهة برمجة تطبيقات بوت تيليجرام (على وجه التحديد، عن طريق محاولة استرداد معلومات الدردشة). بينما هذه الطريقة دقيقة بشكل عام لأسماء المستخدمين العامة، **قد لا تكون دقيقة بنسبة 100% في جميع الحالات.** قد تظهر بعض أسماء المستخدمين متاحة من خلال البوت ولكنها في الواقع محجوزة بواسطة كيانات خاصة أو أنواع معينة من الحسابات، بسبب قيود في ما يمكن لواجهات برمجة تطبيقات البوت فحصه. **تأكد دائماً من التوفر مباشرة على تيليجرام عند محاولة تعيين اسم مستخدم.**"
+        ),
+        'flood_wait_message': "❗️ تم إيقاف البوت مؤقتاً بسبب قيود تلغرام على الطلبات. سيعاود المحاولة بعد {retry_after} ثانية. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة.",
+        'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً.",
+        'found_available_immediate': "✅ عثر على اسم متاح: {username}"
     }
 }
 
@@ -250,8 +302,10 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
         text_parts.append(get_text(context, 'available_names', count=len(available_names_info)))
         display_available = format_names_for_display(available_names_info)
         text_parts.append("\n".join(display_available))
+        # --- هذا هو السطر الذي تم تصحيحه ---
         if len(available_names_info) > context.user_data.get('num_to_generate_display', len(available_names_info)):
             text_parts.append(f"...and {len(available_names_info) - context.user_data.get('num_to_generate_display', len(available_names_info))} more available names.")
+        # --- نهاية التعديل ---
     else:
         text_parts.append(get_text(context, 'no_available_names'))
 
@@ -512,7 +566,7 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except BadRequest as e:
                 logger.warning(f"Failed to send immediate available name update: {e}")
             except Exception as e:
-                logger.error(f"Unexpected error sending immediate available name update: {e}")
+                logger.error(f"Unexpected error sending immediate name update: {e}")
         else:
             taken_count += 1
 
