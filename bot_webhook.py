@@ -626,7 +626,7 @@ if __name__ == '__main__':
             
             ASK_DELAY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input),
-                CallbackCallbackQueryHandler(button, pattern="^back$|^stop_processing$") # Corrected: CallbackCallbackQueryHandler -> CallbackQueryHandler
+                CallbackQueryHandler(button, pattern="^back$|^stop_processing$") # Corrected: CallbackCallbackQueryHandler -> CallbackQueryHandler
             ],
 
             BULK_LIST: [
