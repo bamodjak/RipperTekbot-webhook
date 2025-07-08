@@ -30,12 +30,21 @@ from telegram.ext import (
 )
 
 # --- Configuration ---
-# IMPORTANT: Replace "YOUR_BOT_TOKEN_HERE" with your actual bot token from BotFather.
-# It's highly recommended to use an environment variable in a real deployment:
-# TOKEN = os.getenv("TELEGRAM_TOKEN")
-# if not TOKEN:
-#     raise RuntimeError("TELEGRAM_TOKEN environment variable not set!")
-TOKEN = "YOUR_BOT_TOKEN_HERE" # <<< REPLACE THIS WITH YOUR BOT TOKEN
+# IMPORTANT: Get your bot token from BotFather.
+# Set TELEGRAM_TOKEN, WEBHOOK_URL, and PORT as environment variables on your hosting platform (e.g., Railway).
+# Example for Railway:
+# TELEGRAM_TOKEN = your_actual_bot_token_here
+# WEBHOOK_URL = https://your-railway-project-domain.railway.app
+# PORT = 8000 (or 8443, or whatever port Railway assigns/expects for your app)
+
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT = int(os.getenv("PORT", 8000)) # Default to 8000 if PORT env var is not set
+
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_TOKEN environment variable not set! Please set it on Railway.")
+if not WEBHOOK_URL:
+    raise RuntimeError("WEBHOOK_URL environment variable not set! Please set it on Railway.")
 
 # States for ConversationHandler
 (INITIAL_MENU, ASK_USERNAME_COUNT, ASK_PATTERN, ASK_DELAY, BULK_LIST,
@@ -879,11 +888,17 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 def main():
     """Start the bot."""
-    # Ensure TOKEN is set before building the application
-    if TOKEN == "YOUR_BOT_TOKEN_HERE":
-        logger.error("Bot token is not set! Please replace 'YOUR_BOT_TOKEN_HERE' in the code with your actual Telegram bot token.")
-        print("\nERROR: Bot token is not set! Please replace 'YOUR_BOT_TOKEN_HERE' in the code with your actual Telegram bot token.")
+    # Ensure TOKEN, WEBHOOK_URL are set before building the application
+    if not TOKEN:
+        logger.error("Bot token is not set! Please set TELEGRAM_TOKEN environment variable.")
+        print("\nERROR: Bot token is not set! Please set TELEGRAM_TOKEN environment variable.")
         print("You can get a token from @BotFather on Telegram by sending /newbot.")
+        return
+    
+    if not WEBHOOK_URL:
+        logger.error("WEBHOOK_URL is not set! Please set WEBHOOK_URL environment variable.")
+        print("\nERROR: WEBHOOK_URL is not set! Please set WEBHOOK_URL environment variable.")
+        print("This should be the public URL of your deployed application (e.g., from Railway).")
         return
 
     application = ApplicationBuilder().token(TOKEN).build()
@@ -932,9 +947,14 @@ def main():
     application.add_handler(conv_handler)
     application.add_error_handler(error_handler)
     
-    # Start the bot
-    logger.info("Starting RipperTek Telegram Bot...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Start the bot with webhook
+    logger.info("Starting RipperTek Telegram Bot with Webhook...")
+    application.run_webhook(
+        listen="0.0.0.0", # Listen on all available network interfaces
+        port=PORT,
+        url_path=TOKEN, # Use the token as the path for security
+        webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
+    )
 
 if __name__ == '__main__':
     main()
