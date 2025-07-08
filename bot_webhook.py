@@ -5,7 +5,7 @@ import string
 import asyncio
 import warnings
 
-# تجاهل التحذير المحدد من مكتبة python-telegram-bot (إذا استمر الظهور)
+# Suppress the PTBUserWarning
 warnings.filterwarnings(
     "ignore",
     message="If 'per_message=False', 'CallbackQueryHandler' will not be tracked for every message.",
@@ -13,7 +13,6 @@ warnings.filterwarnings(
     module="telegram.ext.conversationhandler"
 )
 
-# تأكد أن هذا السطر موجود لاستيراد Update وغيرها بشكل صحيح
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
 from telegram.ext import (
@@ -67,7 +66,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == 'generate':
-        await query.edit_message_text("Send a sample pattern (e.g., a_b_c):", reply_markup=get_stop_and_back_keyboard())
+        await query.edit_message_text("Send a sample pattern (e.g., `user_a_b_c` where 'a', 'b', 'c' are replaced by random chars/digits):", parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard())
         return ASK_EXAMPLE
     elif query.data == 'bulk':
         await query.edit_message_text("Send a list of usernames (one per line):", reply_markup=get_stop_and_back_keyboard())
@@ -77,7 +76,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "**How RipperTek Bot Works:**\n\n"
             "This bot helps you find available Telegram usernames. "
             "You can either:\n\n"
-            "1. **Generate Usernames:** Provide a pattern like `a_b_c` (where 'a', 'b', 'c' are placeholders that will be replaced by random letters/digits). The bot will generate variations and check their availability.\n\n"
+            "1. **Generate Usernames:** Provide a pattern like `user_a_b_c` (where 'a', 'b', 'c' are placeholders that will be replaced by random letters/digits). The bot will generate variations and check their availability.\n\n"
             "2. **Bulk Check List:** Send a list of usernames (one per line) and the bot will check each one for availability.\n\n"
             "**Aim:** To simplify the process of finding unique and unused Telegram usernames for your channels, groups, or personal profiles.\n\n"
             "**Note:** Username availability checks are based on Telegram's API behavior (attempting to get chat info). While generally accurate, there might be edge cases (e.g., private channels) that affect results.",
@@ -144,7 +143,7 @@ async def check_username_availability(context: ContextTypes.DEFAULT_TYPE, userna
 
 # Handle generated pattern request
 async def ask_example(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pattern = update.message.text.strip()
+    pattern = update.message.text.strip().lower() # <--- تم إضافة .lower() هنا
     if not pattern:
         await update.message.reply_text("Please provide a valid pattern.", reply_markup=get_stop_and_back_keyboard())
         return ASK_EXAMPLE
@@ -152,6 +151,8 @@ async def ask_example(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Searching for available usernames, please wait...", reply_markup=get_stop_and_back_keyboard())
     
     raw_usernames = generate_usernames(pattern, limit=200)
+    logger.info(f"DEBUG_GENERATE: Pattern: '{pattern}', Generated {len(raw_usernames)} raw names. First 10: {raw_usernames[:10]}")
+    
     available = []
     
     for uname in raw_usernames:
@@ -164,7 +165,7 @@ async def ask_example(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if available:
         text = "✅ First 20 available usernames:\n" + "\n".join(available)
     else:
-        text = f"😔 No available usernames found for your pattern '{pattern}' after checking {len(raw_usernames)} variations."
+        text = f"😔 No available usernames found for your pattern '{pattern}' after checking {len(raw_usernames)} variations. Try a different pattern (remember 'a','b','c' are placeholders)."
 
     await update.message.reply_text(text, reply_markup=get_stop_and_back_keyboard())
     return ConversationHandler.END
