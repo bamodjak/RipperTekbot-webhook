@@ -53,7 +53,9 @@ translations = {
         'language_set': "Language set to English.",
         'how_many_names': "How many names would you like to generate and check (1-500)?",
         'invalid_number': "Please enter a number between 1 and 500.",
-        'send_pattern': "Send a sample pattern (e.g., `user_x_x_x` where 'x' is replaced by random chars/digits). Use double quotes `\"\"` for fixed parts (e.g., `\"my_name\"_x`):",
+        # --- هذا هو السطر الذي تم تصحيحه ---
+        'send_pattern': "Send a sample pattern (e.g., `user_x_x_x` where 'x' is replaced by random chars/digits). For fixed parts, enclose them in double quotes (e.g., `\"my_name\"_x`):",
+        # --- نهاية التعديل ---
         'invalid_pattern': "Please provide a valid pattern.",
         'ask_delay': "Enter a delay between checks in seconds (e.g., 0.1 for 100ms, 1 for 1s). Enter 0 for no additional delay:",
         'invalid_delay': "Please enter a valid number for delay (e.g., 0.1, 1, 5).",
@@ -80,17 +82,19 @@ translations = {
         'operation_cancelled': "❌ Operation cancelled. Type /start to begin again.",
         'no_names_to_save': "No names to save in {filename}.",
         'failed_to_send_file': "Failed to send the file: {error}",
+        # --- هذا هو السطر الذي تم تصحيحه ---
         'how_to_content': (
             "**How RipperTek Bot Works:**\n\n"
             "This bot helps you find available Telegram usernames. "
             "You can either:\n\n"
-            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_x_x_x` (where 'x' is a placeholder that will be replaced by random letters/digits). Use double quotes `\"\"` for fixed parts (e.g., `\"my_name\"_x` will keep \"my_name\" as is). The bot will generate variations and check their availability.\n\n"
+            "1. **Generate Usernames:** First, tell me how many names to find, then provide a pattern like `user_x_x_x` (where 'x' is a placeholder that will be replaced by random letters/digits). For fixed parts, enclose them in double quotes (e.g., `\"my_name\"_x` will keep \"my_name\" as is). The bot will generate variations and check their availability.\n\n"
             "2. **Bulk Check List:** Send a list of usernames (one per line) and the bot will check each one for availability.\n\n"
             "**Aim:** To simplify the process of finding unique and unused Telegram usernames for your channels, groups, or personal profiles.\n\n"
             "**Important Note on Accuracy:** Username availability checks are performed using Telegram's bot API (specifically, by attempting to retrieve chat information). While this method is generally accurate for public usernames, **it may not be 100% precise for all cases.** Some usernames might appear available through the bot but are actually taken by private entities or certain types of accounts, due to limitations in what bot APIs can check. **Always confirm availability directly on Telegram when attempting to set a username.**"
         ),
+        # --- نهاية التعديل ---
         'flood_wait_message': "❗️ Bot paused due to Telegram's flood control. Retrying in {retry_after} seconds. Please wait, this might take a while for large requests.",
-        'stopping_process_ack': "🛑 Stopping process... Displaying results shortly." # New acknowledgement message
+        'stopping_process_ack': "🛑 Stopping process... Displaying results shortly."
     },
     'ar': {
         'welcome': "أهلاً بك في بوت RipperTek. الرجاء الاختيار:",
@@ -104,7 +108,9 @@ translations = {
         'language_set': "تم تعيين اللغة إلى العربية.",
         'how_many_names': "كم عدد الأسماء التي تود توليدها وفحصها (1-500)؟",
         'invalid_number': "الرجاء إدخال رقم بين 1 و 500.",
-        'send_pattern': "أرسل نمطاً مثالياً (مثل `user_x_x_x` حيث يتم استبدال 'x' بأحرف/أرقام عشوائية). استخدم علامتي الاقتباس `\"\"` للأجزاء الثابتة (مثال: `\"my_name\"_x` سيبقي \"my_name\" كما هي):",
+        # --- هذا هو السطر الذي تم تصحيحه ---
+        'send_pattern': "أرسل نمطاً مثالياً (مثل `user_x_x_x` حيث يتم استبدال 'x' بأحرف/أرقام عشوائية). للأجزاء الثابتة، ضعها بين علامتي اقتباس مزدوجة (مثال: `\"اسم_ثابت\"_x`):",
+        # --- نهاية التعديل ---
         'invalid_pattern': "الرجاء توفير نمط صالح.",
         'ask_delay': "أدخل تأخيراً بين عمليات الفحص بالثواني (مثال: 0.1 لـ 100 مللي ثانية، 1 لـ 1 ثانية). أدخل 0 لعدم وجود تأخير إضافي:",
         'invalid_delay': "الرجاء إدخال رقم صالح للتأخير (مثال: 0.1, 1, 5).",
@@ -131,6 +137,7 @@ translations = {
         'operation_cancelled': "❌ تم إلغاء العملية. اكتب /start للبدء من جديد.",
         'no_names_to_save': "لا توجد أسماء لحفظها في {filename}.",
         'failed_to_send_file': "فشل في إرسال الملف: {error}",
+        # --- هذا هو السطر الذي تم تصحيحه ---
         'how_to_content': (
             "**كيف يعمل بوت RipperTek:**\n\n"
             "يساعدك هذا البوت في العثور على أسماء مستخدمين متاحة في تيليجرام. "
@@ -140,6 +147,7 @@ translations = {
             "**الهدف:** تبسيط عملية العثور على أسماء مستخدمين فريدة وغير مستخدمة في تيليجرام لقنواتك أو مجموعاتك أو ملفاتك الشخصية.\n\n"
             "**ملاحظة هامة حول الدقة:** يتم إجراء فحوصات توفر اسم المستخدم باستخدام واجهة برمجة تطبيقات بوت تيليجرام (على وجه التحديد، عن طريق محاولة استرداد معلومات الدردشة). بينما هذه الطريقة دقيقة بشكل عام لأسماء المستخدمين العامة، **قد لا تكون دقيقة بنسبة 100% في جميع الحالات.** قد تظهر بعض أسماء المستخدمين متاحة من خلال البوت ولكنها في الواقع محجوزة بواسطة كيانات خاصة أو أنواع معينة من الحسابات، بسبب قيود في ما يمكن لواجهات برمجة تطبيقات البوت فحصه. **تأكد دائماً من التوفر مباشرة على تيليجرام عند محاولة تعيين اسم مستخدم.**"
         ),
+        # --- نهاية التعديل ---
         'flood_wait_message': "❗️ تم إيقاف البوت مؤقتاً بسبب قيود تلغرام على الطلبات. سيعاود المحاولة بعد {retry_after} ثانية. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة.",
         'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً."
     }
@@ -250,12 +258,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return INITIAL_MENU
     
-    elif query.data == 'stop_processing': # Updated logic for stop_processing
+    elif query.data == 'stop_processing':
         context.user_data['stop_requested'] = True
-        await query.answer(text=get_text(context, 'stopping_process_ack')) # Show acknowledgement
-        # The display_results call and state transition will be handled by the main processing loop
-        # (handle_delay_input or bulk_list) after it breaks.
-        return ConversationHandler.END # End the conversation here. The main loop will then call display_results.
+        await query.answer(text=get_text(context, 'stopping_process_ack'))
+        return ConversationHandler.END # End the conversation here, display_results will be called by the loop.
 
 
 # Handler for language selection callback
@@ -311,10 +317,9 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if num_to_display > 100:
             warning_text = get_text(context, 'large_request_warning') + "\n\n"
 
-        # Send initial "Searching..." message and store its ID for updates
         initial_message = await update.message.reply_text(warning_text + get_text(context, 'searching_names', count=num_to_display, pattern=pattern), parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard(context))
         context.user_data['progress_message_id'] = initial_message.message_id
-        context.user_data['stop_requested'] = False # Ensure stop flag is reset at start of new process
+        context.user_data['stop_requested'] = False
 
         raw_usernames = generate_usernames(pattern, num_to_display)
         logger.info(f"DEBUG_GENERATE: Pattern: '{pattern}', Generated {len(raw_usernames)} raw names. First 10: {raw_usernames[:10]}")
@@ -324,14 +329,13 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         taken_count = 0
         last_update_time = asyncio.get_event_loop().time()
         
-        # Updated: Attempt to update frequently
         UPDATE_INTERVAL_SECONDS = 1 
         UPDATE_INTERVAL_COUNT = 1 
 
         for i, uname in enumerate(raw_usernames):
             if context.user_data.get('stop_requested'):
                 logger.info("Stop requested by user. Breaking loop.")
-                break # Exit loop if stop is requested
+                break
 
             is_available, username_str, link = await check_username_availability(context, uname)
             all_results.append({'username': username_str, 'available': is_available, 'link': link})
@@ -362,169 +366,38 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 
             await asyncio.sleep(check_delay)
 
-        # After loop, regardless of stop or completion, display final/partial results
         await display_results(update, context, all_results, is_final=True, pattern=pattern)
-        return INITIAL_MENU # Return to main menu after showing results
+        return INITIAL_MENU
         # --- End of main processing logic ---
 
     except ValueError:
         await update.message.reply_text(get_text(context, 'invalid_delay'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_DELAY
 
-# This function is now ONLY for handling pattern input and moving to ASK_DELAY.
-# The main processing logic is moved to handle_delay_input.
-# It's called when the user sends a pattern.
-async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # This function's content has been moved to handle_pattern_input.
-    # It just returns the state for the conversation handler.
-    pass # This function should ideally not be called directly from ConversationHandler anymore
-    # Its logic is now in handle_pattern_input, which is the MessageHandler for ASK_PATTERN state.
+# This function is now just a helper to display final/partial results
+# The main processing loop moved to handle_delay_input for pattern generation and bulk_list
+async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, all_results: list[dict], is_final: bool, pattern: str = None):
+    available_names_info = [r for r in all_results if r['available']]
+    taken_names_info = [r for r in all_results if not r['available']]
+
+    context.user_data['last_available_names'] = [r['username'] for r in available_names_info]
+    context.user_data['last_all_checked_results'] = all_results
+
+    text_parts = []
+    if pattern:
+        text_parts.append(get_text(context, 'checked_variations', total_checked=len(all_results), pattern=pattern))
+    else: # For bulk list
+        text_parts.append(get_text(context, 'checked_list_usernames', total_checked=len(all_results)))
 
 
-# Handle bulk checking request (modified to match new processing flow)
-async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    names = [n.strip() for n in update.message.text.splitlines() if n.strip()]
-    if not names:
-        await update.message.reply_text(get_text(context, 'no_usernames_provided'), reply_markup=get_stop_and_back_keyboard(context))
-        return BULK_LIST
+    def format_names_for_display(name_objects: list[dict]) -> list[str]:
+        formatted = []
+        for item in name_objects:
+            if item['link']:
+                formatted.append(f"[`@{item['username']}`]({item['link']})")
+            else:
+                formatted.append(f"`@{item['username']}`")
+        return formatted
 
-    warning_text = ""
-    if len(names) > 100:
-        warning_text = get_text(context, 'large_request_warning') + "\n\n"
-
-    context.user_data['check_delay'] = 0.05 # Default delay for bulk check
-
-    initial_message = await update.message.reply_text(warning_text + get_text(context, 'checking_list'), parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard(context))
-    context.user_data['progress_message_id'] = initial_message.message_id
-    context.user_data['stop_requested'] = False
-
-    all_results = []
-    available_count = 0
-    taken_count = 0
-    last_update_time = asyncio.get_event_loop().time()
-    
-    UPDATE_INTERVAL_SECONDS = 1
-    UPDATE_INTERVAL_COUNT = 1
-
-    for i, name in enumerate(names):
-        if context.user_data.get('stop_requested'):
-            logger.info("Stop requested by user. Breaking loop.")
-            break
-
-        is_available, username_str, link = await check_username_availability(context, name)
-        all_results.append({'username': username_str, 'available': is_available, 'link': link})
-        if is_available:
-            available_count += 1
-        else:
-            taken_count += 1
-
-        current_time = asyncio.get_event_loop().time()
-        if (i + 1) % UPDATE_INTERVAL_COUNT == 0 or (current_time - last_update_time) >= UPDATE_INTERVAL_SECONDS:
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=update.effective_chat.id,
-                    message_id=context.user_data['progress_message_id'],
-                    text=warning_text + get_text(context, 'checking_progress', 
-                                                current_checked=i+1, 
-                                                total_to_check=len(names),
-                                                available_count=available_count,
-                                                taken_count=taken_count),
-                    parse_mode='Markdown',
-                    reply_markup=get_stop_and_back_keyboard(context)
-                )
-                last_update_time = current_time
-            except BadRequest as e:
-                logger.warning(f"Failed to edit progress message (likely rate limit or formatting): {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
-            except Exception as e:
-                logger.error(f"Unexpected error when editing progress message: {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
-
-        await asyncio.sleep(context.user_data['check_delay'])
-
-    await display_results(update, context, all_results, is_final=True)
-    return INITIAL_MENU
-
-# Cancel command handler
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['stop_requested'] = True
-    await update.message.reply_text(get_text(context, 'operation_cancelled'), reply_markup=get_main_menu_keyboard(context))
-    return ConversationHandler.END
-
-# Helper function to send a list of names as a text file
-async def send_names_as_file(context: ContextTypes.DEFAULT_TYPE, chat_id: int, names_list: list[str], filename: str):
-    if not names_list:
-        await context.bot.send_message(chat_id=chat_id, text=get_text(context, 'no_names_to_save', filename=filename))
-        return
-
-    file_content = "\n".join(names_list)
-    file_stream = io.BytesIO(file_content.encode('utf-8'))
-    file_stream.name = filename
-
-    try:
-        await context.bot.send_document(chat_id=chat_id, document=InputFile(file_stream))
-        logger.info(f"Sent {filename} to chat {chat_id}")
-    except Exception as e:
-        logger.error(f"Failed to send document {filename} to chat {chat_id}: {e}")
-        await context.bot.send_message(chat_id=chat_id, text=get_text(context, 'failed_to_send_file', error=str(e)))
-
-
-# Main application setup and run
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            INITIAL_MENU: [CallbackQueryHandler(button)],
-            
-            ASK_COUNT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_count_input),
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
-            ],
-
-            ASK_PATTERN: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pattern_input),
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
-            ],
-            
-            ASK_DELAY: [ # New state for delay input. handle_delay_input starts the processing.
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input),
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
-            ],
-
-            BULK_LIST: [ # This state directly handles bulk list input and starts processing.
-                MessageHandler(filters.TEXT & ~filters.COMMAND, bulk_list),
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
-            ],
-            HOW_TO_INFO: [
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
-            ],
-            SET_LANGUAGE: [
-                CallbackQueryHandler(button, pattern="^lang_en$|^lang_ar$|^back$")
-            ]
-        },
-        fallbacks=[
-            CommandHandler("cancel", cancel),
-            CallbackQueryHandler(button, pattern="^back$|^stop_processing$|^download_available$|^download_all_checked$|^stop$")
-        ],
-        per_message=False
-    )
-
-    app.add_handler(conv_handler)
-
-    PORT = int(os.getenv("PORT", "8080"))
-    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-    
-    WEBHOOK_SECRET_PATH = os.getenv("WEBHOOK_SECRET_PATH", f"webhook_{os.urandom(16).hex()}")
-    logger.info(f"DEBUG: WEBHOOK_SECRET_PATH being used: {WEBHOOK_SECRET_PATH}")
-
-    if WEBHOOK_URL:
-        logger.info(f"Starting Webhook at {WEBHOOK_URL}/{WEBHOOK_SECRET_PATH} on port {PORT}")
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=WEBHOOK_SECRET_PATH,
-            webhook_url=f"{WEBHOOK_URL}/{WEBHOOK_SECRET_PATH}"
-        )
-    else:
-        logger.warning("No WEBHOOK_URL set. Running in polling mode. This is not recommended for production on Railway.")
-        app.run_polling()
+    if available_names_info:
+        text_parts.append(
