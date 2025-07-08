@@ -39,7 +39,7 @@ if not TOKEN:
 # States for ConversationHandler
 INITIAL_MENU, ASK_COUNT, ASK_PATTERN, ASK_DELAY, BULK_LIST, HOW_TO_INFO, SET_LANGUAGE = range(7)
 
-# --- Translations Dictionary (Complete and Corrected) ---
+# --- Translations Dictionary ---
 translations = {
     'en': {
         'welcome': "Welcome to RipperTek Bot. Please choose:",
@@ -147,9 +147,12 @@ translations = {
 }
 
 # --- Constants for thresholds ---
-MAX_DISPLAY = 100 # This constant is not used globally but for clarity
-UPDATE_INTERVAL_SECONDS = 1
-UPDATE_INTERVAL_COUNT = 1
+# These constants define the behavior for progress updates and username validation
+UPDATE_INTERVAL_SECONDS = 1 # How often to try updating the progress message (in seconds)
+UPDATE_INTERVAL_COUNT = 1   # How many names to check before trying to update progress message
+MIN_USERNAME_LENGTH = 5     # Minimum length for a valid Telegram username
+MAX_USERNAME_LENGTH = 32    # Maximum length for a valid Telegram username
+PLACEHOLDER_CHAR = 'x'      # The character used as a placeholder in patterns (e.g., user_x_x_x)
 
 # --- Helper function to get translated text ---
 def get_text(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
@@ -194,31 +197,30 @@ def get_language_keyboard():
 
 # --- Core Logic Functions ---
 
-# Helper to validate username
+# Helper to validate username based on Telegram rules
 def is_valid_username(username: str) -> bool:
-    # Use constants for min/max length
-    return 5 <= len(username) <= 32 and username[0] != '_' and username.replace('_', '').isalnum()
+    return MIN_USERNAME_LENGTH <= len(username) <= MAX_USERNAME_LENGTH and username[0] != '_' and username.replace('_', '').isalnum()
 
-# Helper to validate patterns for generation
+# Helper to validate patterns for generation (must contain 'x' or quoted part)
 def is_valid_pattern_for_generation(pattern: str) -> bool:
     # A pattern is valid if it contains at least one 'x' or one quoted part.
     # This regex checks for either: a quoted string OR an 'x' character.
     return bool(re.search(r'"[^"]*"|x', pattern))
 
-# Username generator logic (Corrected parsing logic)
+# Username generator logic (Updated with robust parsing logic)
 def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[str]:
     letters = string.ascii_lowercase + string.digits
     generated = set()
     attempts = 0
     max_attempts = num_variations_to_try * 10 
     
-    PLACEHOLDER_CHAR = 'x'
-
     # --- Robust Pattern Parsing Logic ---
-    parsed_pattern_parts = []
+    parsed_pattern_parts = [] # This will store (type, content) tuples
     i = 0
     while i < len(pattern):
-        if pattern[i] == '"':
+        char = pattern[i]
+        
+        if char == '"':
             # Quoted part
             i += 1 # Skip opening quote
             start = i
@@ -226,7 +228,7 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
                 i += 1
             parsed_pattern_parts.append(('fixed', pattern[start:i]))
             i += 1  # Skip closing quote
-        elif pattern[i] == PLACEHOLDER_CHAR:
+        elif char == PLACEHOLDER_CHAR:
             # Placeholder 'x'
             parsed_pattern_parts.append(('placeholder', PLACEHOLDER_CHAR))
             i += 1
@@ -240,8 +242,9 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
 
     logger.info(f"Pattern parsed for generation: {parsed_pattern_parts}")
     
-    # If no placeholders or valid fixed parts were found in the parsed pattern
-    if not any(part_type == 'placeholder' for part_type, _ in parsed_pattern_parts) and not any(part_type == 'fixed' and part for part_type, part in parsed_pattern_parts):
+    # If no placeholders or valid fixed parts were found in the parsed pattern, return empty
+    if not any(part_type == 'placeholder' for part_type, _ in parsed_pattern_parts) and \
+       not any(part_type == 'fixed' and part for part_type, part in parsed_pattern_parts):
         logger.warning(f"Pattern '{pattern}' contains no placeholders ('x') or valid fixed parts for generation after parsing.")
         return []
 
@@ -252,8 +255,9 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
             if part_type == 'fixed':
                 current_uname_list.append(content)
             else: # It's a placeholder 'x'
-                if idx == 0 and not current_uname_list: # If this is the very first segment and it's a placeholder
-                    current_uname_list.append(random.choice(string.ascii_lowercase)) # Ensure first char is letter
+                # If this is the very first segment and it's a placeholder, ensure it starts with a letter
+                if idx == 0 and not current_uname_list: 
+                    current_uname_list.append(random.choice(string.ascii_lowercase))
                 else:
                     current_uname_list.append(random.choice(letters))
         
@@ -298,7 +302,7 @@ async def check_username_availability(update: Update, context: ContextTypes.DEFA
             logger.info(f"Username @{username} is likely available.")
             return True, username, f"https://t.me/{username}"
         logger.error(f"Telegram API BadRequest: {e}")
-    except Exception as e:
+    except Exception as e: # General exception handler
         logger.error(f"Unexpected error checking username {username}: {e}")
     return False, username, None
 
@@ -379,7 +383,7 @@ async def process_check(
 
     # Send initial progress message
     initial_message = await update.message.reply_text(
-        warning_text + get_text(context, 'searching_names', count=len(usernames), pattern=pattern or ""), # pattern or "" handles bulk list case
+        warning_text + get_text(context, 'searching_names', count=len(usernames), pattern=pattern or ""), 
         parse_mode='Markdown',
         reply_markup=get_stop_and_back_keyboard(context)
     )
@@ -551,15 +555,14 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         pattern = context.user_data['pattern']
         num_to_display = context.user_data.get('num_to_generate_display', 20)
         
-        # Start processing for generated names
         await process_check(
             update=update,
             context=context,
-            usernames=generate_usernames(pattern, num_to_display), # Use num_to_display as num_variations
+            usernames=generate_usernames(pattern, num_to_display), 
             pattern=pattern,
             is_bulk=False
         )
-        return INITIAL_MENU # Return state after process completes
+        return INITIAL_MENU
     except ValueError:
         await update.message.reply_text(get_text(context, 'invalid_delay'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_DELAY
@@ -571,12 +574,11 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(get_text(context, 'no_usernames_provided'), reply_markup=get_stop_and_back_keyboard(context))
         return BULK_LIST
 
-    # Start processing for bulk list
     await process_check(
         update=update,
         context=context,
         usernames=names,
-        pattern=None, # No pattern for bulk list
+        pattern=None,
         is_bulk=True
     )
     return INITIAL_MENU
@@ -626,7 +628,7 @@ if __name__ == '__main__':
             
             ASK_DELAY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input),
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$") # Corrected: CallbackCallbackQueryHandler -> CallbackQueryHandler
+                CallbackQueryHandler(button, pattern="^back$|^stop_processing$") 
             ],
 
             BULK_LIST: [
