@@ -90,7 +90,8 @@ translations = {
             "**Important Note on Accuracy:** Username availability checks are performed using Telegram's bot API (specifically, by attempting to retrieve chat information). While this method is generally accurate for public usernames, **it may not be 100% precise for all cases.** Some usernames might appear available through the bot but are actually taken by private entities or certain types of accounts, due to limitations in what bot APIs can check. **Always confirm availability directly on Telegram when attempting to set a username.**"
         ),
         'flood_wait_message': "❗️ Bot paused due to Telegram's flood control. Retrying in {retry_after} seconds. Please wait, this might take a while for large requests.",
-        'stopping_process_ack': "🛑 Stopping process... Displaying results shortly."
+        'stopping_process_ack': "🛑 Stopping process... Displaying results shortly.",
+        'found_available_immediate': "🎉 Available now: {username}" # ADDED THIS LINE
     },
     'ar': {
         'welcome': "أهلاً بك في بوت RipperTek. الرجاء الاختيار:",
@@ -138,10 +139,11 @@ translations = {
             "1. **توليد أسماء مستخدمين:** أولاً، أخبرني كم عدد الأسماء التي تريد العثور عليها، ثم قدم نمطاً مثل `user_x_x_x` (حيث يتم استبدال 'x' بأحرف/أرقام عشوائية). استخدم علامتي الاقتباس `\"\"` للأجزاء الثابتة (مثال: `\"my_name\"_x` سيبقي \"my_name\" كما هي). سيقوم البوت بتوليد اختلافات وفحص توفرها.\n\n"
             "2. **فحص قائمة جماعية:** أرسل قائمة بأسماء المستخدمين (اسم واحد في كل سطر) وسيقوم البوت بفحص كل اسم للتحقق من توفره.\n\n"
             "**الهدف:** تبسيط عملية العثور على أسماء مستخدمين فريدة وغير مستخدمة في تيليجرام لقنواتك أو مجموعاتك أو ملفاتك الشخصية.\n\n"
-            "**ملاحظة هامة حول الدقة:** يتم إجراء فحوصات توفر اسم المستخدم باستخدام واجهة برمجة تطبيقات بوت تيليجرام (على وجه التحديد، عن طريق محاولة استرداد معلومات الدردشة). بينما هذه الطريقة دقيقة بشكل عام لأسماء المستخدمين العامة، **قد لا تكون دقيقة بنسبة 100% في جميع الحالات.** قد تظهر بعض أسماء المستخدمين متاحة من خلال البوت ولكنها في الواقع محجوزة بواسطة كيانات خاصة أو أنواع معينة من الحسابات، بسبب قيود في ما يمكن لواجهات برمجة تطبيقات البوت فحصه. **تأكد دائماً من التوفر مباشرة على تيليجرام عند محاولة تعيين اسم مستخدم.**"
+            "**ملاحظة هامة حول الدقة:** يتم إجراء فحوصات توفر اسم المستخدم باستخدام واجهة برمجة تطبيقات بوت تيليجرام (على وجه التحديد، عن طريق محاولة استرداد معلومات الدردشة). بينما هذه الطريقة دقيقة بشكل عام لأسماء المستخدمين العامة، **قد لا تكون دقيقة بنسبة 100% في جميع الحالات.** قد تظهر بعض أسماء المستخدمين متاحة من خلال البوت ولكنها في الواقع محجوزة بواسطة كيانات خاصة أو أنواع معينة من الحسابات، بسبب قيود في ما يمكن لواجهات برمجة تطبيقات البوت فحصها. **تأكد دائماً من التوفر مباشرة على تيليجرام عند محاولة تعيين اسم مستخدم.**"
         ),
         'flood_wait_message': "❗️ تم إيقاف البوت مؤقتاً بسبب قيود تلغرام على الطلبات. سيعاود المحاولة بعد {retry_after} ثانية. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة.",
-        'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً."
+        'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً.",
+        'found_available_immediate': "🎉 متاح الآن: {username}" # ADDED THIS LINE
     }
 }
 
@@ -209,16 +211,16 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
     generated = set()
     attempts = 0
     max_attempts = num_variations_to_try * 10 
-    
+
     # --- Robust Pattern Parsing Logic ---
     parsed_pattern_parts = [] # This will store (type, content) tuples
-    
+
     # This regex now correctly identifies quoted strings, 'x' placeholders, and any other literal text.
     # Group 1: quoted string content (e.g., "my_name" -> "my_name")
     # Group 2: literal 'x' character
     # Group 3: any other sequence of characters not a quote or 'x'
     regex_tokenizer = re.compile(r'"([^"]*)"|(x)|([^"x]+)')
-    
+
     for match in regex_tokenizer.finditer(pattern):
         if match.group(1) is not None: # It's a quoted string
             parsed_pattern_parts.append(('fixed', match.group(1)))
@@ -230,7 +232,7 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
     # --- End Robust Pattern Parsing Logic ---
 
     logger.info(f"Pattern parsed for generation: {parsed_pattern_parts}")
-    
+
     # If no placeholders or valid fixed parts were found in the parsed pattern, return empty
     if not any(part_type == 'placeholder' for part_type, _ in parsed_pattern_parts) and \
        not any(part_type == 'fixed' and part for part_type, part in parsed_pattern_parts):
@@ -239,7 +241,7 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
 
     while len(generated) < num_variations_to_try and attempts < max_attempts:
         current_uname_list = []
-        
+
         for idx, (part_type, content) in enumerate(parsed_pattern_parts):
             if part_type == 'fixed':
                 current_uname_list.append(content)
@@ -249,13 +251,13 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
                     current_uname_list.append(random.choice(string.ascii_lowercase))
                 else:
                     current_uname_list.append(random.choice(letters))
-        
+
         final_uname = "".join(current_uname_list)
 
         if is_valid_username(final_uname): # Use helper for validation
             generated.add(final_uname)
         attempts += 1
-    
+
     return list(generated)
 
 
@@ -267,11 +269,11 @@ async def check_username_availability(update: Update, context: ContextTypes.DEFA
 
     try:
         chat = await context.bot.get_chat(f"@{username}")
-        
+
         if chat.username and chat.username.lower() == username.lower():
             logger.info(f"Username @{username} already exists.")
             return False, username, f"https://t.me/{chat.username}"
-        
+
         return False, username, None
     except TimedOut as e:
         retry_after = e.retry_after
@@ -341,7 +343,7 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
         text_parts.append(get_text(context, 'all_generated_available'))
 
     final_text = "\n".join(text_parts)
-    
+
     if len(final_text) > 4000:
         final_text = get_text(context, 'result_too_long', total_checked=len(all_results), available_count=len(available_names_info), taken_count=len(taken_names_info))
 
@@ -391,6 +393,7 @@ async def process_check(
 
         if is_available: # Send new message only for available names
             try:
+                # This is the line that caused the error, now fixed by adding the translation key.
                 msg_text = get_text(context, 'found_available_immediate', username=f"[`@{username_str}`]({link})") if link else get_text(context, 'found_available_immediate', username=f"`@{username_str}`")
                 await update.effective_chat.send_message(msg_text, parse_mode='Markdown')
             except Exception as e:
@@ -474,7 +477,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for item in context.user_data['last_all_checked_results']:
                 status_key = 'available_names' if item['available'] else 'taken_names'
                 status_text = translations[context.user_data['language']].get(status_key, translations['en'][status_key])
-                status = status_text.replace('✅ ', '').replace(' ()', '').replace('\n❌ ', '')
+                # Clean up status text for file, e.g., "✅ Available" -> "Available"
+                status = status_text.replace('✅ ', '').replace(' ()', '').replace('\n❌ ', '').strip()
                 formatted_results.append(f"{item['username']} ({status})")
             await send_names_as_file(context, update.effective_chat.id, formatted_results, "all_checked_usernames.txt")
         else:
@@ -489,7 +493,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_menu_keyboard(context)
         )
         return INITIAL_MENU
-    
+
     elif query.data == 'stop_processing':
         context.user_data['stop_requested'] = True
         await query.answer(text=get_text(context, 'stopping_process_ack'))
@@ -501,7 +505,7 @@ async def set_language_callback(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     lang_code = query.data.split('_')[1]
     context.user_data['language'] = lang_code
-    
+
     await query.edit_message_text(get_text(context, 'language_set'), reply_markup=get_main_menu_keyboard(context))
     return INITIAL_MENU
 
@@ -513,7 +517,7 @@ async def handle_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if not (1 <= count <= 500):
             await update.message.reply_text(get_text(context, 'invalid_number'), reply_markup=get_stop_and_back_keyboard(context))
             return ASK_COUNT
-        
+
         context.user_data['num_to_generate_display'] = count
         await update.message.reply_text(get_text(context, 'send_pattern'), parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard(context))
         return ASK_PATTERN
@@ -527,7 +531,7 @@ async def handle_pattern_input(update: Update, context: ContextTypes.DEFAULT_TYP
     if not pattern or not is_valid_pattern_for_generation(pattern):
         await update.message.reply_text(get_text(context, 'invalid_pattern'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_PATTERN
-    
+
     context.user_data['pattern'] = pattern
     await update.message.reply_text(get_text(context, 'ask_delay'), reply_markup=get_stop_and_back_keyboard(context))
     return ASK_DELAY
@@ -539,10 +543,10 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if delay < 0:
             raise ValueError
         context.user_data['check_delay'] = delay
-        
+
         pattern = context.user_data['pattern']
         num_to_display = context.user_data.get('num_to_generate_display', 20)
-        
+
         await process_check(
             update=update,
             context=context,
@@ -603,7 +607,7 @@ if __name__ == '__main__':
         entry_points=[CommandHandler("start", start)],
         states={
             INITIAL_MENU: [CallbackQueryHandler(button)],
-            
+
             ASK_COUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_count_input),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
@@ -613,7 +617,7 @@ if __name__ == '__main__':
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pattern_input),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
             ],
-            
+
             ASK_DELAY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$") 
@@ -641,7 +645,7 @@ if __name__ == '__main__':
 
     PORT = int(os.getenv("PORT", "8080"))
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-    
+
     WEBHOOK_SECRET_PATH = os.getenv("WEBHOOK_SECRET_PATH", f"webhook_{os.urandom(16).hex()}")
     logger.info(f"DEBUG: WEBHOOK_SECRET_PATH being used: {WEBHOOK_SECRET_PATH}")
 
@@ -656,3 +660,4 @@ if __name__ == '__main__':
     else:
         logger.warning("No WEBHOOK_URL set. Running in polling mode. This is not recommended for production on Railway.")
         app.run_polling()
+
