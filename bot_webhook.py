@@ -4,7 +4,7 @@ import random
 import string
 import asyncio
 import warnings
-import io # لاستخدام BytesIO لإنشاء ملفات في الذاكرة
+import io
 
 # Suppress the PTBUserWarning
 warnings.filterwarnings(
@@ -22,7 +22,7 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler,
     ConversationHandler,
-    ContextTypes,
+    ContextTypes, # Corrected: ContextTypes
     filters
 )
 
@@ -55,7 +55,7 @@ def get_stop_and_back_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Result Screen Buttons Helper (جديد) ---
+# --- Result Screen Buttons Helper ---
 def get_result_screen_keyboard():
     keyboard = [
         [InlineKeyboardButton("⬇️ Download Available Names", callback_data='download_available')],
@@ -143,7 +143,7 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
     letters = string.ascii_lowercase + string.digits
     generated = set()
     attempts = 0
-    max_attempts = num_variations_to_try * 5 # Keep a higher max_attempts to ensure enough unique names are generated if pattern is restrictive.
+    max_attempts = num_variations_to_try * 5
     
     PLACEHOLDER_CHAR = 'x'
 
@@ -201,8 +201,7 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_PATTERN
 
     num_to_display = context.user_data.get('num_to_generate_display', 20)
-    # هذا هو التعديل الرئيسي: نجعل عدد المحاولات يساوي العدد المطلوب للعرض
-    num_variations_to_try = num_to_display 
+    num_variations_to_try = num_to_display # Corrected: only generate the number requested.
 
     await update.message.reply_text(f"Searching for {num_to_display} usernames based on '{pattern}', please wait...", reply_markup=get_stop_and_back_keyboard())
     
@@ -258,7 +257,7 @@ async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return INITIAL_MENU
 
 # Handle bulk checking request
-async def bulk_list(update: Update, context: Contextypes.DEFAULT_TYPE):
+async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE): # Corrected: Contextypes -> ContextTypes
     names = [n.strip() for n in update.message.text.splitlines() if n.strip()]
     if not names:
         await update.message.reply_text("Please provide a list of usernames.", reply_markup=get_stop_and_back_keyboard())
@@ -294,6 +293,8 @@ async def bulk_list(update: Update, context: Contextypes.DEFAULT_TYPE):
         text_parts.append("\n".join([f"`@{name}`" for name in taken_names[:MAX_TAKEN_TO_DISPLAY]]))
         if len(taken_names) > MAX_TAKEN_TO_DISPLAY:
             text_parts.append(f"...and {len(taken_names) - MAX_TAKEN_TO_DISPLAY} more taken names.")
+        else:
+            text_parts.append("\n".join(taken_names))
     else:
         text_parts.append("\n🎉 All provided usernames were found available! (Unlikely for large numbers)")
 
@@ -320,6 +321,7 @@ async def send_names_as_file(context: ContextTypes.DEFAULT_TYPE, chat_id: int, n
         await context.bot.send_message(chat_id=chat_id, text=f"No names to save in {filename}.")
         return
 
+    # Ensure names are joined correctly for the file
     file_content = "\n".join(names_list)
     file_stream = io.BytesIO(file_content.encode('utf-8'))
     file_stream.name = filename
