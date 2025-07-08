@@ -6,6 +6,7 @@ import asyncio
 import warnings
 import io
 import re
+import httpx # Added httpx for API calls
 
 # Suppress the PTBUserWarning
 warnings.filterwarnings(
@@ -154,11 +155,45 @@ MIN_USERNAME_LENGTH = 5
 MAX_USERNAME_LENGTH = 32    
 PLACEHOLDER_CHAR = 'x'      
 
+# A list of fallback words in case API fails or returns empty (English)
+FALLBACK_WORDS_EN = [
+    "user", "admin", "tech", "pro", "game", "bot", "tool", "alpha", "beta",
+    "master", "geek", "coder", "dev", "creator", "digital", "online", "system",
+    "prime", "expert", "fusion", "galaxy", "infinity", "legend", "nova", "omega",
+    "phantom", "quest", "rocket", "spirit", "ultra", "vision", "wizard", "zenith",
+    "swift", "spark", "glitch", "echo", "cipher", "matrix", "nexus", "orbit",
+    "pulse", "quantum", "reboot", "stellar", "titan", "vortex", "zephyr", "byte"
+]
+
+# A list of fallback words in case API fails or returns empty (Arabic)
+FALLBACK_WORDS_AR = [
+    "مستخدم", "مسؤول", "تقنية", "محترف", "لعبة", "بوت", "أداة", "مبدع", "رقمي",
+    "خبير", "عالم", "نظام", "أفق", "نجم", "بوابة", "روح", "قوة", "فارس"
+]
+
+
 # --- Helper function to get translated text ---
 def get_text(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
     lang = context.user_data.get('language', 'en')
     text = translations.get(lang, translations['en']).get(key, f"Translation missing for '{key}' in '{lang}'")
     return text.format(**kwargs)
+
+# Helper function to escape characters for MarkdownV2
+def escape_markdown_v2(text: str) -> str:
+    """Helper function to escape characters for MarkdownV2."""
+    # List of special characters that need to be escaped in MarkdownV2
+    # https://core.telegram.org/bots/api#markdownv2-style
+    # This list includes all characters that have special meaning in MarkdownV2.
+    special_chars = r'_*[]()~`>#+-=|{}.!'
+    
+    # Escape backslashes first, as they are used for escaping other characters.
+    text = text.replace('\\', '\\\\')
+    
+    # Escape other special characters
+    for char in special_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
+
 
 # --- Helper Functions for Keyboards ---
 def get_main_menu_keyboard(context: ContextTypes.DEFAULT_TYPE):
@@ -199,62 +234,102 @@ def get_language_keyboard():
 
 # Helper to validate username based on Telegram rules
 def is_valid_username(username: str) -> bool:
-    return MIN_USERNAME_LENGTH <= len(username) <= MAX_USERNAME_LENGTH and username[0] != '_' and username.replace('_', '').isalnum()
+    # Telegram usernames can contain letters, digits, and underscores.
+    # They must be 5-32 characters long.
+    # They must start with a letter (as per common Telegram username conventions,
+    # though technically some channels/bots can start with underscore).
+    if not (MIN_USERNAME_LENGTH <= len(username) <= MAX_USERNAME_LENGTH):
+        return False
+    if not username[0].isalpha(): # Must start with a letter
+        return False
+    # Check if all characters are alphanumeric or underscore
+    if not all(c.isalnum() or c == '_' for c in username):
+        return False
+    return True
 
 # Helper to validate patterns for generation (must contain 'x' or quoted part)
 def is_valid_pattern_for_generation(pattern: str) -> bool:
     return bool(re.search(r'"[^"]*"|x', pattern))
 
-# Username generator logic (Corrected parsing logic)
-def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[str]:
+# Username generator logic (Updated for seed words from API)
+async def generate_usernames(pattern: str, num_variations_to_try: int = 200, context: ContextTypes.DEFAULT_TYPE = None) -> list[str]:
     letters = string.ascii_lowercase + string.digits
     generated = set()
     attempts = 0
     max_attempts = num_variations_to_try * 10 
 
     # --- Robust Pattern Parsing Logic ---
-    parsed_pattern_parts = [] # This will store (type, content) tuples
-
-    # This regex now correctly identifies quoted strings, 'x' placeholders, and any other literal text.
-    # Group 1: quoted string content (e.g., "my_name" -> "my_name")
-    # Group 2: literal 'x' character
-    # Group 3: any other sequence of characters not a quote or 'x'
+    parsed_pattern_parts = []
     regex_tokenizer = re.compile(r'"([^"]*)"|(x)|([^"x]+)')
 
     for match in regex_tokenizer.finditer(pattern):
-        if match.group(1) is not None: # It's a quoted string
+        if match.group(1) is not None:
             parsed_pattern_parts.append(('fixed', match.group(1)))
-        elif match.group(2) is not None: # It's an 'x' placeholder
+        elif match.group(2) is not None:
             parsed_pattern_parts.append(('placeholder', PLACEHOLDER_CHAR))
-        elif match.group(3) is not None: # It's a literal segment (e.g., "X", "orb" from X"orb"x)
+        elif match.group(3) is not None:
             parsed_pattern_parts.append(('fixed', match.group(3)))
-
-    # --- End Robust Pattern Parsing Logic ---
 
     logger.info(f"Pattern parsed for generation: {parsed_pattern_parts}")
 
-    # If no placeholders or valid fixed parts were found in the parsed pattern, return empty
     if not any(part_type == 'placeholder' for part_type, _ in parsed_pattern_parts) and \
        not any(part_type == 'fixed' and part for part_type, part in parsed_pattern_parts):
         logger.warning(f"Pattern '{pattern}' contains no placeholders ('x') or valid fixed parts for generation after parsing.")
         return []
 
+    # Determine which seed word list to use based on language (for fallback)
+    lang = context.user_data.get('language', 'en') if context else 'en'
+    fallback_words = FALLBACK_WORDS_AR if lang == 'ar' else FALLBACK_WORDS_EN
+
+    # Fetch seed words from API for English, use fallback for Arabic or API failure
+    api_seed_words = []
+    if lang == 'en': # Only try fetching from API for English
+        try:
+            async with httpx.AsyncClient() as client:
+                api_url = "https://random-word-api.vercel.app/api"
+                params = {"words": 50} # Request 50 words to have a good pool
+                
+                response = await client.get(api_url, params=params, timeout=5)
+                response.raise_for_status() # Raise an exception for bad status codes
+                api_seed_words = response.json()
+                logger.info(f"Fetched {len(api_seed_words)} words from API for pattern generation.")
+        except httpx.RequestError as e:
+            logger.error(f"HTTPX Request Error fetching words from API: {e}. Using fallback words.")
+        except Exception as e:
+            logger.error(f"Unexpected error fetching words from API: {e}. Using fallback words.")
+    
+    # Combine API words with fallback words, prioritize API words
+    current_seed_words = api_seed_words + fallback_words
+    # Remove duplicates and shuffle to ensure good randomness if both lists combine
+    current_seed_words = list(set(current_seed_words))
+    random.shuffle(current_seed_words)
+
+
     while len(generated) < num_variations_to_try and attempts < max_attempts:
         current_uname_list = []
+        seed_word_inserted = False # Flag to ensure only one seed word is used at the beginning
 
         for idx, (part_type, content) in enumerate(parsed_pattern_parts):
             if part_type == 'fixed':
                 current_uname_list.append(content)
-            else: # It's a placeholder 'x'
-                # If this is the very first segment and it's a placeholder, ensure it starts with a letter
-                if idx == 0 and not current_uname_list: 
-                    current_uname_list.append(random.choice(string.ascii_lowercase))
+            elif part_type == 'placeholder':
+                # Only insert a seed word if this is the first 'x' encountered and no seed word has been used yet
+                if not seed_word_inserted and current_seed_words:
+                    chosen_word = random.choice(current_seed_words)
+                    current_uname_list.append(chosen_word)
+                    seed_word_inserted = True
                 else:
-                    current_uname_list.append(random.choice(letters))
+                    # Fill subsequent 'x' placeholders or if no seed words are available
+                    # If this is the very first segment and it's a placeholder, ensure it starts with a letter
+                    if idx == 0 and not current_uname_list: 
+                        current_uname_list.append(random.choice(string.ascii_lowercase))
+                    else:
+                        current_uname_list.append(random.choice(letters))
 
         final_uname = "".join(current_uname_list)
 
-        if is_valid_username(final_uname): # Use helper for validation
+        # Ensure the generated username adheres to Telegram's general rules (length, first char)
+        if is_valid_username(final_uname): # Use helper for full Telegram validation
             generated.add(final_uname)
         attempts += 1
 
@@ -265,16 +340,23 @@ def generate_usernames(pattern: str, num_variations_to_try: int = 200) -> list[s
 async def check_username_availability(update: Update, context: ContextTypes.DEFAULT_TYPE, username: str) -> tuple[bool, str, str | None]:
     if not is_valid_username(username):
         logger.warning(f"Invalid username format (pre-API check): {username}")
-        return False, username, None
+        # For an invalid format, it's not "available" or "taken", but "invalid"
+        return False, username, None 
 
     try:
         chat = await context.bot.get_chat(f"@{username}")
 
+        # If get_chat succeeds and the username matches, it's taken
         if chat.username and chat.username.lower() == username.lower():
             logger.info(f"Username @{username} already exists.")
             return False, username, f"https://t.me/{chat.username}"
 
-        return False, username, None
+        # If get_chat succeeds but username doesn't match (e.g., it's a channel, not a user),
+        # or it's a case where Telegram API responds with a chat object but username is not public,
+        # it's safer to consider it taken or not truly available for new public assignment.
+        logger.info(f"Username @{username} responded with chat info, likely taken/reserved.")
+        return False, username, None 
+
     except TimedOut as e:
         retry_after = e.retry_after
         logger.warning(f"FLOODWAIT: Hit flood control for @{username}. Retrying in {retry_after} seconds.")
@@ -292,13 +374,17 @@ async def check_username_availability(update: Update, context: ContextTypes.DEFA
         if "username not found" in error_message or "chat not found" in error_message:
             logger.info(f"Username @{username} is likely available.")
             return True, username, f"https://t.me/{username}"
-        logger.error(f"Telegram API BadRequest: {e}")
+        
+        # Handle other BadRequest errors more gracefully
+        logger.error(f"Telegram API BadRequest for {username}: {e}")
+        # If it's another BadRequest, assume it's taken or problematic
+        return False, username, None 
     except Exception as e:
         logger.error(f"Unexpected error checking username {username}: {e}")
-    return False, username, None
+        return False, username, None # Assume not available on unexpected errors
 
 # Function to display results
-async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, all_results: list[dict], pattern: str = None):
+async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, all_results: list[dict], pattern: str = None, is_bulk: bool = False): # Added is_bulk parameter
     available_names_info = [r for r in all_results if r['available']]
     taken_names_info = [r for r in all_results if not r['available']]
 
@@ -307,7 +393,8 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
 
     text_parts = []
     if pattern:
-        text_parts.append(get_text(context, 'checked_variations', total_checked=len(all_results), pattern=pattern))
+        escaped_pattern_display = escape_markdown_v2(pattern) # Escaped here
+        text_parts.append(get_text(context, 'checked_variations', total_checked=len(all_results), pattern=escaped_pattern_display))
     else: # For bulk list
         text_parts.append(get_text(context, 'checked_list_usernames', total_checked=len(all_results)))
 
@@ -315,10 +402,14 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
     def format_names_for_display(name_objects: list[dict]) -> list[str]:
         formatted = []
         for item in name_objects:
+            # Escape username for display within backticks or links
+            escaped_username = escape_markdown_v2(item['username'])
+            # Link part of the Markdown requires escaping the URL too if it contains specific chars,
+            # but t.me links are usually safe. The main thing is the username itself.
             if item['link']:
-                formatted.append(f"[`@{item['username']}`]({item['link']})")
+                formatted.append(f"[`@{escaped_username}`]({item['link']})")
             else:
-                formatted.append(f"`@{item['username']}`")
+                formatted.append(f"`@{escaped_username}`")
         return formatted
 
     if available_names_info:
@@ -340,12 +431,17 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
         if len(taken_names_info) > MAX_TAKEN_TO_DISPLAY:
             text_parts.append(f"...and {len(taken_names_info) - MAX_TAKEN_TO_DISPLAY} more taken names.")
     else:
-        text_parts.append(get_text(context, 'all_generated_available'))
+        if available_names_info and not taken_names_info:
+             text_parts.append(get_text(context, 'all_generated_available'))
+
 
     final_text = "\n".join(text_parts)
 
     if len(final_text) > 4000:
-        final_text = get_text(context, 'result_too_long', total_checked=len(all_results), available_count=len(available_names_info), taken_count=len(taken_names_info))
+        if is_bulk: 
+            final_text = get_text(context, 'list_result_too_long', total_checked=len(all_results), available_count=len(available_names_info), taken_count=len(taken_names_info))
+        else:
+            final_text = get_text(context, 'result_too_long', total_checked=len(all_results), available_count=len(available_names_info), taken_count=len(taken_names_info))
 
     await update.effective_chat.send_message(final_text, parse_mode='Markdown', reply_markup=get_result_screen_keyboard(context))
 
@@ -373,8 +469,9 @@ async def process_check(
 
     # Send initial progress message
     try:
+        escaped_pattern_for_init_msg = escape_markdown_v2(pattern) if pattern else "" # Escaped here
         initial_message = await update.message.reply_text(
-            warning_text + get_text(context, 'searching_names', count=len(usernames), pattern=pattern or ""), 
+            warning_text + get_text(context, 'searching_names', count=len(usernames), pattern=escaped_pattern_for_init_msg), 
             parse_mode='Markdown',
             reply_markup=get_stop_and_back_keyboard(context)
         )
@@ -383,8 +480,6 @@ async def process_check(
         context.user_data['stop_requested'] = False # Reset stop flag
     except Exception as e:
         logger.error(f"Failed to send initial progress message: {e}")
-        # If we can't send the initial message, we can't proceed with updates either.
-        # Fallback to just displaying results directly if possible.
         await update.effective_chat.send_message(get_text(context, 'operation_cancelled'))
         return ConversationHandler.END
 
@@ -404,7 +499,9 @@ async def process_check(
 
             if is_available: # Send new message only for available names
                 try:
-                    msg_text = get_text(context, 'found_available_immediate', username=f"[`@{username_str}`]({link})") if link else get_text(context, 'found_available_immediate', username=f"`@{username_str}`")
+                    escaped_username_str = escape_markdown_v2(username_str) # Escaped here
+                    msg_text = get_text(context, 'found_available_immediate', 
+                                         username=f"[`@{escaped_username_str}`]({link})" if link else f"`@{escaped_username_str}`")
                     await update.effective_chat.send_message(msg_text, parse_mode='Markdown')
                 except Exception as e:
                     logger.warning(f"Failed to send immediate available name update: {e}")
@@ -427,28 +524,25 @@ async def process_check(
                                       available_count=available_count,
                                       taken_count=taken_count,
                                       remaining_count=len(usernames)-(i+1)),
-                        parse_mode='Markdown',
+                        parse_mode='Markdown', 
                         reply_markup=get_stop_and_back_keyboard(context)
                     )
-                    last_update_time = current_time # Update timestamp only on successful edit
+                    last_update_time = current_time 
                 except Exception as e:
                     logger.warning(f"Failed to update progress message: {e}")
 
             try:
-                # Crucial: Allow cancellation during sleep
                 await asyncio.sleep(check_delay) 
             except asyncio.CancelledError:
                 logger.info("Processing task was cancelled during sleep.")
-                break # Break loop immediately if cancelled during sleep
+                break 
 
     except asyncio.CancelledError:
         logger.info("Process check task was externally cancelled.")
     finally:
-        # Always display results if any were gathered, even if stopped prematurely
         if all_results:
-            await display_results(update, context, all_results, pattern=pattern)
+            await display_results(update, context, all_results, pattern=pattern, is_bulk=is_bulk)
         else:
-            # If no results were gathered (e.g., stopped very early), inform the user
             await update.effective_chat.send_message(get_text(context, 'operation_cancelled'))
 
     return ConversationHandler.END
@@ -463,8 +557,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(get_text(context, 'welcome'), reply_markup=get_main_menu_keyboard(context))
     return INITIAL_MENU
 
-# This handler needs to be more granular for `stop_processing` to work correctly.
-# We'll create a dedicated handler for 'stop_processing'
 async def handle_button_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -501,9 +593,8 @@ async def handle_button_callbacks(update: Update, context: ContextTypes.DEFAULT_
             for item in context.user_data['last_all_checked_results']:
                 status_key = 'available_names' if item['available'] else 'taken_names'
                 status_text = translations[context.user_data['language']].get(status_key, translations['en'][status_key])
-                # Clean up status text for file, e.g., "✅ Available" -> "Available"
                 status = status_text.replace('✅ ', '').replace(' ()', '').replace('\n❌ ', '').strip()
-                formatted_results.append(f"{item['username']} ({status})")
+                formatted_results.append(f"{escape_markdown_v2(item['username'])} ({status})") # Escaped username for file
             await send_names_as_file(context, update.effective_chat.id, formatted_results, "all_checked_usernames.txt")
         else:
             await query.message.reply_text(get_text(context, 'no_names_to_save', filename="all_checked_usernames.txt"))
@@ -511,8 +602,6 @@ async def handle_button_callbacks(update: Update, context: ContextTypes.DEFAULT_
         return INITIAL_MENU
 
     elif query.data == 'back':
-        # Setting stop_requested here ensures that if process_check is running,
-        # it will catch this on its next loop iteration.
         context.user_data['stop_requested'] = True 
         await query.edit_message_text(
             get_text(context, 'welcome'),
@@ -520,8 +609,6 @@ async def handle_button_callbacks(update: Update, context: ContextTypes.DEFAULT_
         )
         return INITIAL_MENU
     
-    # The 'stop_processing' callback will now be handled by a dedicated handler below.
-    # The 'stop' callback on the results screen just goes back to main menu.
     elif query.data == 'stop':
         await query.edit_message_text(
             get_text(context, 'welcome'),
@@ -530,44 +617,34 @@ async def handle_button_callbacks(update: Update, context: ContextTypes.DEFAULT_
         return INITIAL_MENU
 
 
-# NEW: Dedicated handler for stopping the process
 async def stop_processing_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer(text=get_text(context, 'stopping_process_ack'))
     
-    # Set the flag to stop the process
     context.user_data['stop_requested'] = True
 
-    # If there's a running task for process_check, attempt to cancel it
-    # This requires storing the task when it's created.
     if 'processing_task' in context.user_data and not context.user_data['processing_task'].done():
         context.user_data['processing_task'].cancel()
         logger.info("Attempted to cancel the ongoing process_check task.")
         try:
-            # Wait a short moment for the cancellation to propagate and for the task to finish its cleanup
             await asyncio.sleep(0.1) 
         except asyncio.CancelledError:
-            pass # This task might also be cancelled if the conversation ends.
+            pass 
 
-    # Update the message immediately to reflect the stop request
     if 'progress_message_id' in context.user_data:
         try:
             await context.bot.edit_message_text(
                 chat_id=query.message.chat_id,
                 message_id=context.user_data['progress_message_id'],
                 text=get_text(context, 'stopping_process_ack'),
-                reply_markup=None # Remove buttons while stopping
+                reply_markup=None 
             )
         except Exception as e:
             logger.warning(f"Failed to edit message to acknowledge stop: {e}")
             
-    # The `process_check` function (when it eventually stops due to the flag or cancellation)
-    # will handle displaying the final results and returning INITIAL_MENU/ConversationHandler.END.
-    # So, we return a special state here to keep the conversation active just long enough
-    # for `process_check` to finish its cleanup and transition.
-    return ConversationHandler.END # Or, if you want to explicitly return to initial menu here: INITIAL_MENU
+    return ConversationHandler.END
 
-# Handler for language selection callback
+
 async def set_language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     lang_code = query.data.split('_')[1]
@@ -577,7 +654,6 @@ async def set_language_callback(update: Update, context: ContextTypes.DEFAULT_TY
     return INITIAL_MENU
 
 
-# Handler for count input
 async def handle_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         count = int(update.message.text.strip())
@@ -592,7 +668,6 @@ async def handle_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(get_text(context, 'invalid_number'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_COUNT
 
-# Handler for pattern input
 async def handle_pattern_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pattern = update.message.text.strip()
     if not pattern or not is_valid_pattern_for_generation(pattern):
@@ -603,7 +678,6 @@ async def handle_pattern_input(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(get_text(context, 'ask_delay'), reply_markup=get_stop_and_back_keyboard(context))
     return ASK_DELAY
 
-# Handler for delay input
 async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         delay = float(update.message.text.strip())
@@ -614,32 +688,29 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         pattern = context.user_data['pattern']
         num_to_display = context.user_data.get('num_to_generate_display', 20)
 
-        # Store the task so it can be cancelled later
+        generated_names = await generate_usernames(pattern, num_to_display, context)
+
         task = asyncio.create_task(
             process_check(
                 update=update,
                 context=context,
-                usernames=generate_usernames(pattern, num_to_display), 
+                usernames=generated_names, 
                 pattern=pattern,
                 is_bulk=False
             )
         )
         context.user_data['processing_task'] = task
-        # We return a specific state here, and `process_check` will transition out of it
-        # once it completes or is stopped.
-        return ASK_DELAY # Stay in this state until process_check completes
+        return ASK_DELAY 
     except ValueError:
         await update.message.reply_text(get_text(context, 'invalid_delay'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_DELAY
 
-# Handle bulk checking request
 async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     names = [n.strip() for n in update.message.text.splitlines() if n.strip()]
     if not names:
         await update.message.reply_text(get_text(context, 'no_usernames_provided'), reply_markup=get_stop_and_back_keyboard(context))
         return BULK_LIST
 
-    # Store the task so it can be cancelled later
     task = asyncio.create_task(
         process_check(
             update=update,
@@ -650,10 +721,8 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
     context.user_data['processing_task'] = task
-    # Stay in this state until process_check completes
     return BULK_LIST
 
-# Cancel command handler
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['stop_requested'] = True
     if 'processing_task' in context.user_data and not context.user_data['processing_task'].done():
@@ -663,13 +732,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(get_text(context, 'operation_cancelled'), reply_markup=get_main_menu_keyboard(context))
     return ConversationHandler.END
 
-# Helper function to send a list of names as a text file
 async def send_names_as_file(context: ContextTypes.DEFAULT_TYPE, chat_id: int, names_list: list[str], filename: str):
     if not names_list:
         await context.bot.send_message(chat_id=chat_id, text=get_text(context, 'no_names_to_save', filename=filename))
         return
 
-    file_content = "\n".join(names_list)
+    # No need to escape here, this is for a plain text file.
+    file_content = "\n".join(names_list) 
     file_stream = io.BytesIO(file_content.encode('utf-8'))
     file_stream.name = filename
 
@@ -681,7 +750,6 @@ async def send_names_as_file(context: ContextTypes.DEFAULT_TYPE, chat_id: int, n
         await context.bot.send_message(chat_id=chat_id, text=get_text(context, 'failed_to_send_file', error=str(e)))
 
 
-# Main application setup and run
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -692,8 +760,8 @@ if __name__ == '__main__':
 
             ASK_COUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_count_input),
-                CallbackQueryHandler(handle_button_callbacks, pattern="^back$"), # Back only
-                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$") # Dedicated stop
+                CallbackQueryHandler(handle_button_callbacks, pattern="^back$"), 
+                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$") 
             ],
 
             ASK_PATTERN: [
@@ -705,17 +773,16 @@ if __name__ == '__main__':
             ASK_DELAY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input),
                 CallbackQueryHandler(handle_button_callbacks, pattern="^back$"),
-                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$") # This is where it's likely stuck
+                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$") 
             ],
 
             BULK_LIST: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, bulk_list),
                 CallbackQueryHandler(handle_button_callbacks, pattern="^back$"),
-                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$") # Or here
+                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$") 
             ],
             HOW_TO_INFO: [
-                CallbackQueryHandler(handle_button_callbacks, pattern="^back$"),
-                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$")
+                CallbackQueryHandler(handle_button_callbacks, pattern="^back$")
             ],
             SET_LANGUAGE: [
                 CallbackQueryHandler(handle_button_callbacks, pattern="^lang_en$|^lang_ar$|^back$")
@@ -723,10 +790,8 @@ if __name__ == '__main__':
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
-            # This fallback is crucial for the 'stop_processing' callback to be caught
-            # when the conversation is in a processing state.
             CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$"),
-            CallbackQueryHandler(handle_button_callbacks, pattern="^back$|^download_available$|^download_all_checked$|^stop$")
+            CallbackQueryHandler(handle_button_callbacks) 
         ],
         per_message=False
     )
