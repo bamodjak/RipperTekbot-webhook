@@ -91,7 +91,7 @@ translations = {
         ),
         'flood_wait_message': "❗️ Bot paused due to Telegram's flood control. Retrying in {retry_after} seconds. Please wait, this might take a while for large requests.",
         'stopping_process_ack': "🛑 Stopping process... Displaying results shortly.",
-        'found_available_immediate': "🎉 Available now: {username}" # ADDED THIS LINE
+        'found_available_immediate': "🎉 Available now: {username}"
     },
     'ar': {
         'welcome': "أهلاً بك في بوت RipperTek. الرجاء الاختيار:",
@@ -143,7 +143,7 @@ translations = {
         ),
         'flood_wait_message': "❗️ تم إيقاف البوت مؤقتاً بسبب قيود تلغرام على الطلبات. سيعاود المحاولة بعد {retry_after} ثانية. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة.",
         'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً.",
-        'found_available_immediate': "🎉 متاح الآن: {username}" # ADDED THIS LINE
+        'found_available_immediate': "🎉 متاح الآن: {username}"
     }
 }
 
@@ -182,7 +182,7 @@ def get_result_screen_keyboard(context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(get_text(context, 'download_available_btn'), callback_data='download_available')],
         [InlineKeyboardButton(get_text(context, 'download_all_checked_btn'), callback_data='download_all_checked')],
         [InlineKeyboardButton(get_text(context, 'back_btn'), callback_data='back')],
-        [InlineKeyboardButton(get_text(context, 'stop_btn'), callback_data='stop')]
+        [InlineKeyboardButton(get_text(context, 'stop_btn'), callback_data='stop')] # This 'stop' callback is for the results screen, not the processing loop
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -372,64 +372,86 @@ async def process_check(
         warning_text = get_text(context, 'large_request_warning') + "\n\n"
 
     # Send initial progress message
-    initial_message = await update.message.reply_text(
-        warning_text + get_text(context, 'searching_names', count=len(usernames), pattern=pattern or ""), 
-        parse_mode='Markdown',
-        reply_markup=get_stop_and_back_keyboard(context)
-    )
-    progress_msg_id = initial_message.message_id
-    context.user_data['progress_message_id'] = progress_msg_id
-    context.user_data['stop_requested'] = False # Reset stop flag
+    try:
+        initial_message = await update.message.reply_text(
+            warning_text + get_text(context, 'searching_names', count=len(usernames), pattern=pattern or ""), 
+            parse_mode='Markdown',
+            reply_markup=get_stop_and_back_keyboard(context)
+        )
+        progress_msg_id = initial_message.message_id
+        context.user_data['progress_message_id'] = progress_msg_id
+        context.user_data['stop_requested'] = False # Reset stop flag
+    except Exception as e:
+        logger.error(f"Failed to send initial progress message: {e}")
+        # If we can't send the initial message, we can't proceed with updates either.
+        # Fallback to just displaying results directly if possible.
+        await update.effective_chat.send_message(get_text(context, 'operation_cancelled'))
+        return ConversationHandler.END
+
 
     check_delay = context.user_data.get('check_delay', 0.05) # Get delay from user_data
 
-    for i, uname in enumerate(usernames):
-        if context.user_data.get('stop_requested'):
-            logger.info("Stop requested by user. Breaking loop.")
-            break
+    # Wrap the entire loop in a try-except to catch CancelledError
+    try:
+        for i, uname in enumerate(usernames):
+            # Check for stop_requested at the beginning of each iteration
+            if context.user_data.get('stop_requested'):
+                logger.info("Stop requested by user. Breaking loop.")
+                break # Break out of the loop
 
-        is_available, username_str, link = await check_username_availability(update, context, uname)
-        all_results.append({'username': username_str, 'available': is_available, 'link': link})
+            is_available, username_str, link = await check_username_availability(update, context, uname)
+            all_results.append({'username': username_str, 'available': is_available, 'link': link})
 
-        if is_available: # Send new message only for available names
+            if is_available: # Send new message only for available names
+                try:
+                    msg_text = get_text(context, 'found_available_immediate', username=f"[`@{username_str}`]({link})") if link else get_text(context, 'found_available_immediate', username=f"`@{username_str}`")
+                    await update.effective_chat.send_message(msg_text, parse_mode='Markdown')
+                except Exception as e:
+                    logger.warning(f"Failed to send immediate available name update: {e}")
+
+            if is_available:
+                available_count += 1
+            else:
+                taken_count += 1
+
+            # Update progress message periodically (every 1 name or every 1 second)
+            current_time = loop.time()
+            if (i + 1) % UPDATE_INTERVAL_COUNT == 0 or (current_time - last_update_time) >= UPDATE_INTERVAL_SECONDS:
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=progress_msg_id,
+                        text=get_text(context, 'checking_progress', 
+                                      current_checked=i+1, 
+                                      total_to_check=len(usernames),
+                                      available_count=available_count,
+                                      taken_count=taken_count,
+                                      remaining_count=len(usernames)-(i+1)),
+                        parse_mode='Markdown',
+                        reply_markup=get_stop_and_back_keyboard(context)
+                    )
+                    last_update_time = current_time # Update timestamp only on successful edit
+                except Exception as e:
+                    logger.warning(f"Failed to update progress message: {e}")
+
             try:
-                # This is the line that caused the error, now fixed by adding the translation key.
-                msg_text = get_text(context, 'found_available_immediate', username=f"[`@{username_str}`]({link})") if link else get_text(context, 'found_available_immediate', username=f"`@{username_str}`")
-                await update.effective_chat.send_message(msg_text, parse_mode='Markdown')
-            except Exception as e:
-                logger.warning(f"Failed to send immediate available name update: {e}")
+                # Crucial: Allow cancellation during sleep
+                await asyncio.sleep(check_delay) 
+            except asyncio.CancelledError:
+                logger.info("Processing task was cancelled during sleep.")
+                break # Break loop immediately if cancelled during sleep
 
-        if is_available:
-            available_count += 1
+    except asyncio.CancelledError:
+        logger.info("Process check task was externally cancelled.")
+    finally:
+        # Always display results if any were gathered, even if stopped prematurely
+        if all_results:
+            await display_results(update, context, all_results, pattern=pattern)
         else:
-            taken_count += 1
+            # If no results were gathered (e.g., stopped very early), inform the user
+            await update.effective_chat.send_message(get_text(context, 'operation_cancelled'))
 
-        # Update progress message periodically (every 1 name or every 1 second)
-        current_time = loop.time()
-        if (i + 1) % UPDATE_INTERVAL_COUNT == 0 or (current_time - last_update_time) >= UPDATE_INTERVAL_SECONDS:
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=progress_msg_id,
-                    text=get_text(context, 'checking_progress', 
-                                  current_checked=i+1, 
-                                  total_to_check=len(usernames),
-                                  available_count=available_count,
-                                  taken_count=taken_count,
-                                  remaining_count=len(usernames)-(i+1)),
-                    parse_mode='Markdown',
-                    reply_markup=get_stop_and_back_keyboard(context)
-                )
-                last_update_time = current_time # Update timestamp only on successful edit
-            except Exception as e:
-                logger.warning(f"Failed to update progress message: {e}")
-
-
-        await asyncio.sleep(check_delay) # Use user-defined delay
-
-    # Final display of results
-    await display_results(update, context, all_results, pattern=pattern)
-    return
+    return ConversationHandler.END
 
 
 # --- Main Handler Functions ---
@@ -441,7 +463,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(get_text(context, 'welcome'), reply_markup=get_main_menu_keyboard(context))
     return INITIAL_MENU
 
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# This handler needs to be more granular for `stop_processing` to work correctly.
+# We'll create a dedicated handler for 'stop_processing'
+async def handle_button_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
@@ -487,18 +511,61 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return INITIAL_MENU
 
     elif query.data == 'back':
-        context.user_data['stop_requested'] = True
+        # Setting stop_requested here ensures that if process_check is running,
+        # it will catch this on its next loop iteration.
+        context.user_data['stop_requested'] = True 
+        await query.edit_message_text(
+            get_text(context, 'welcome'),
+            reply_markup=get_main_menu_keyboard(context)
+        )
+        return INITIAL_MENU
+    
+    # The 'stop_processing' callback will now be handled by a dedicated handler below.
+    # The 'stop' callback on the results screen just goes back to main menu.
+    elif query.data == 'stop':
         await query.edit_message_text(
             get_text(context, 'welcome'),
             reply_markup=get_main_menu_keyboard(context)
         )
         return INITIAL_MENU
 
-    elif query.data == 'stop_processing':
-        context.user_data['stop_requested'] = True
-        await query.answer(text=get_text(context, 'stopping_process_ack'))
-        return ConversationHandler.END
 
+# NEW: Dedicated handler for stopping the process
+async def stop_processing_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer(text=get_text(context, 'stopping_process_ack'))
+    
+    # Set the flag to stop the process
+    context.user_data['stop_requested'] = True
+
+    # If there's a running task for process_check, attempt to cancel it
+    # This requires storing the task when it's created.
+    if 'processing_task' in context.user_data and not context.user_data['processing_task'].done():
+        context.user_data['processing_task'].cancel()
+        logger.info("Attempted to cancel the ongoing process_check task.")
+        try:
+            # Wait a short moment for the cancellation to propagate and for the task to finish its cleanup
+            await asyncio.sleep(0.1) 
+        except asyncio.CancelledError:
+            pass # This task might also be cancelled if the conversation ends.
+
+    # Update the message immediately to reflect the stop request
+    if 'progress_message_id' in context.user_data:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=query.message.chat_id,
+                message_id=context.user_data['progress_message_id'],
+                text=get_text(context, 'stopping_process_ack'),
+                reply_markup=None # Remove buttons while stopping
+            )
+        except Exception as e:
+            logger.warning(f"Failed to edit message to acknowledge stop: {e}")
+            
+    # The `process_check` function (when it eventually stops due to the flag or cancellation)
+    # will handle displaying the final results and returning INITIAL_MENU/ConversationHandler.END.
+    # So, we return a special state here to keep the conversation active just long enough
+    # for `process_check` to finish its cleanup and transition.
+    return ConversationHandler.END # Or, if you want to explicitly return to initial menu here: INITIAL_MENU
 
 # Handler for language selection callback
 async def set_language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -547,14 +614,20 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         pattern = context.user_data['pattern']
         num_to_display = context.user_data.get('num_to_generate_display', 20)
 
-        await process_check(
-            update=update,
-            context=context,
-            usernames=generate_usernames(pattern, num_to_display), 
-            pattern=pattern,
-            is_bulk=False
+        # Store the task so it can be cancelled later
+        task = asyncio.create_task(
+            process_check(
+                update=update,
+                context=context,
+                usernames=generate_usernames(pattern, num_to_display), 
+                pattern=pattern,
+                is_bulk=False
+            )
         )
-        return INITIAL_MENU
+        context.user_data['processing_task'] = task
+        # We return a specific state here, and `process_check` will transition out of it
+        # once it completes or is stopped.
+        return ASK_DELAY # Stay in this state until process_check completes
     except ValueError:
         await update.message.reply_text(get_text(context, 'invalid_delay'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_DELAY
@@ -566,18 +639,27 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(get_text(context, 'no_usernames_provided'), reply_markup=get_stop_and_back_keyboard(context))
         return BULK_LIST
 
-    await process_check(
-        update=update,
-        context=context,
-        usernames=names,
-        pattern=None,
-        is_bulk=True
+    # Store the task so it can be cancelled later
+    task = asyncio.create_task(
+        process_check(
+            update=update,
+            context=context,
+            usernames=names,
+            pattern=None,
+            is_bulk=True
+        )
     )
-    return INITIAL_MENU
+    context.user_data['processing_task'] = task
+    # Stay in this state until process_check completes
+    return BULK_LIST
 
 # Cancel command handler
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['stop_requested'] = True
+    if 'processing_task' in context.user_data and not context.user_data['processing_task'].done():
+        context.user_data['processing_task'].cancel()
+        logger.info("Attempted to cancel processing task via /cancel command.")
+
     await update.message.reply_text(get_text(context, 'operation_cancelled'), reply_markup=get_main_menu_keyboard(context))
     return ConversationHandler.END
 
@@ -606,37 +688,45 @@ if __name__ == '__main__':
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            INITIAL_MENU: [CallbackQueryHandler(button)],
+            INITIAL_MENU: [CallbackQueryHandler(handle_button_callbacks)],
 
             ASK_COUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_count_input),
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
+                CallbackQueryHandler(handle_button_callbacks, pattern="^back$"), # Back only
+                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$") # Dedicated stop
             ],
 
             ASK_PATTERN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pattern_input),
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
+                CallbackQueryHandler(handle_button_callbacks, pattern="^back$"),
+                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$")
             ],
 
             ASK_DELAY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input),
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$") 
+                CallbackQueryHandler(handle_button_callbacks, pattern="^back$"),
+                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$") # This is where it's likely stuck
             ],
 
             BULK_LIST: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, bulk_list),
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
+                CallbackQueryHandler(handle_button_callbacks, pattern="^back$"),
+                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$") # Or here
             ],
             HOW_TO_INFO: [
-                CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
+                CallbackQueryHandler(handle_button_callbacks, pattern="^back$"),
+                CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$")
             ],
             SET_LANGUAGE: [
-                CallbackQueryHandler(button, pattern="^lang_en$|^lang_ar$|^back$")
+                CallbackQueryHandler(handle_button_callbacks, pattern="^lang_en$|^lang_ar$|^back$")
             ]
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
-            CallbackQueryHandler(button, pattern="^back$|^stop_processing$|^download_available$|^download_all_checked$|^stop$")
+            # This fallback is crucial for the 'stop_processing' callback to be caught
+            # when the conversation is in a processing state.
+            CallbackQueryHandler(stop_processing_callback, pattern="^stop_processing$"),
+            CallbackQueryHandler(handle_button_callbacks, pattern="^back$|^download_available$|^download_all_checked$|^stop$")
         ],
         per_message=False
     )
