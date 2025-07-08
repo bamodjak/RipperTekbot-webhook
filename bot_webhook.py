@@ -142,7 +142,7 @@ translations = {
             "**الهدف:** تبسيط عملية العثور على أسماء مستخدمين فريدة وغير مستخدمة في تيليجرام لقنواتك أو مجموعاتك أو ملفاتك الشخصية.\n\n"
             "**ملاحظة هامة حول الدقة:** يتم إجراء فحوصات توفر اسم المستخدم باستخدام واجهة برمجة تطبيقات بوت تيليجرام (على وجه التحديد، عن طريق محاولة استرداد معلومات الدردشة). بينما هذه الطريقة دقيقة بشكل عام لأسماء المستخدمين العامة، **قد لا تكون دقيقة بنسبة 100% في جميع الحالات.** قد تظهر بعض أسماء المستخدمين متاحة من خلال البوت ولكنها في الواقع محجوزة بواسطة كيانات خاصة أو أنواع معينة من الحسابات، بسبب قيود في ما يمكن لواجهات برمجة تطبيقات البوت فحصها. **تأكد دائماً من التوفر مباشرة على تيليجرام عند محاولة تعيين اسم مستخدم.**"
         ),
-        'flood_wait_message': "❗️ تم إيقاف البوت مؤقتاً بسبب قيود تلغرام على الطلبات. سيعاود المحاولة بعد {retry_after} ثانية. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة.",
+        'flood_wait_message': "❗️ Bot paused due to Telegram's flood control. Retrying in {retry_after} seconds. الرجاء الانتظار، قد يستغرق هذا بعض الوقت للطلبات الكبيرة.",
         'stopping_process_ack': "🛑 جارٍ الإيقاف... ستظهر النتائج قريباً.",
         'found_available_immediate': "🎉 متاح الآن: {username}"
     }
@@ -183,7 +183,6 @@ def escape_markdown_v2(text: str) -> str:
     """Helper function to escape characters for MarkdownV2."""
     # List of special characters that need to be escaped in MarkdownV2
     # https://core.telegram.org/bots/api#markdownv2-style
-    # This list includes all characters that have special meaning in MarkdownV2.
     special_chars = r'_*[]()~`>#+-=|{}.!'
     
     # Escape backslashes first, as they are used for escaping other characters.
@@ -217,7 +216,7 @@ def get_result_screen_keyboard(context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(get_text(context, 'download_available_btn'), callback_data='download_available')],
         [InlineKeyboardButton(get_text(context, 'download_all_checked_btn'), callback_data='download_all_checked')],
         [InlineKeyboardButton(get_text(context, 'back_btn'), callback_data='back')],
-        [InlineKeyboardButton(get_text(context, 'stop_btn'), callback_data='stop')] # This 'stop' callback is for the results screen, not the processing loop
+        [InlineKeyboardButton(get_text(context, 'stop_btn'), callback_data='stop')] 
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -234,15 +233,12 @@ def get_language_keyboard():
 
 # Helper to validate username based on Telegram rules
 def is_valid_username(username: str) -> bool:
-    # Telegram usernames can contain letters, digits, and underscores.
-    # They must be 5-32 characters long.
-    # They must start with a letter (as per common Telegram username conventions,
-    # though technically some channels/bots can start with underscore).
     if not (MIN_USERNAME_LENGTH <= len(username) <= MAX_USERNAME_LENGTH):
         return False
-    if not username[0].isalpha(): # Must start with a letter
+    # Telegram usernames can start with a letter or underscore, but
+    # for simplicity in generation and common public usernames, we enforce letter start.
+    if not username[0].isalpha(): 
         return False
-    # Check if all characters are alphanumeric or underscore
     if not all(c.isalnum() or c == '_' for c in username):
         return False
     return True
@@ -251,46 +247,44 @@ def is_valid_username(username: str) -> bool:
 def is_valid_pattern_for_generation(pattern: str) -> bool:
     return bool(re.search(r'"[^"]*"|x', pattern))
 
-# Username generator logic (Updated for seed words from API)
+# Username generator logic (Revised for better length control and word insertion)
 async def generate_usernames(pattern: str, num_variations_to_try: int = 200, context: ContextTypes.DEFAULT_TYPE = None) -> list[str]:
-    letters = string.ascii_lowercase + string.digits
+    letters_digits = string.ascii_lowercase + string.digits
     generated = set()
     attempts = 0
-    max_attempts = num_variations_to_try * 10 
+    max_attempts = num_variations_to_try * 20 # Increased attempts for more variations
 
-    # --- Robust Pattern Parsing Logic ---
+    # Parse pattern: group consecutive 'x's into blocks
     parsed_pattern_parts = []
-    regex_tokenizer = re.compile(r'"([^"]*)"|(x)|([^"x]+)')
+    # 'x+' captures one or more 'x's together
+    regex_tokenizer = re.compile(r'"([^"]*)"|(x+)|([^"x]+)')
 
     for match in regex_tokenizer.finditer(pattern):
-        if match.group(1) is not None:
+        if match.group(1) is not None: # Quoted fixed part
             parsed_pattern_parts.append(('fixed', match.group(1)))
-        elif match.group(2) is not None:
-            parsed_pattern_parts.append(('placeholder', PLACEHOLDER_CHAR))
-        elif match.group(3) is not None:
+        elif match.group(2) is not None: # 'x' placeholder block
+            parsed_pattern_parts.append(('placeholder_block', len(match.group(2)))) # Store length of x-block
+        elif match.group(3) is not None: # Other fixed literal text
             parsed_pattern_parts.append(('fixed', match.group(3)))
 
     logger.info(f"Pattern parsed for generation: {parsed_pattern_parts}")
 
-    if not any(part_type == 'placeholder' for part_type, _ in parsed_pattern_parts) and \
-       not any(part_type == 'fixed' and part for part_type, part in parsed_pattern_parts):
-        logger.warning(f"Pattern '{pattern}' contains no placeholders ('x') or valid fixed parts for generation after parsing.")
+    has_variable_parts = any(part[0] == 'placeholder_block' for part in parsed_pattern_parts)
+    if not has_variable_parts and not parsed_pattern_parts:
+        logger.warning(f"Pattern '{pattern}' contains no placeholders or fixed parts for generation.")
         return []
 
-    # Determine which seed word list to use based on language (for fallback)
     lang = context.user_data.get('language', 'en') if context else 'en'
     fallback_words = FALLBACK_WORDS_AR if lang == 'ar' else FALLBACK_WORDS_EN
 
-    # Fetch seed words from API for English, use fallback for Arabic or API failure
     api_seed_words = []
     if lang == 'en': # Only try fetching from API for English
         try:
             async with httpx.AsyncClient() as client:
                 api_url = "https://random-word-api.vercel.app/api"
-                params = {"words": 50} # Request 50 words to have a good pool
-                
-                response = await client.get(api_url, params=params, timeout=5)
-                response.raise_for_status() # Raise an exception for bad status codes
+                params = {"words": 200} # Request even more words for better choice
+                response = await client.get(api_url, params=params, timeout=7) # Increased timeout
+                response.raise_for_status()
                 api_seed_words = response.json()
                 logger.info(f"Fetched {len(api_seed_words)} words from API for pattern generation.")
         except httpx.RequestError as e:
@@ -298,38 +292,103 @@ async def generate_usernames(pattern: str, num_variations_to_try: int = 200, con
         except Exception as e:
             logger.error(f"Unexpected error fetching words from API: {e}. Using fallback words.")
     
-    # Combine API words with fallback words, prioritize API words
     current_seed_words = api_seed_words + fallback_words
-    # Remove duplicates and shuffle to ensure good randomness if both lists combine
     current_seed_words = list(set(current_seed_words))
     random.shuffle(current_seed_words)
 
-
     while len(generated) < num_variations_to_try and attempts < max_attempts:
-        current_uname_list = []
-        seed_word_inserted = False # Flag to ensure only one seed word is used at the beginning
+        current_username_parts = []
+        seed_word_inserted = False
+        
+        # Calculate the ideal total length of the generated username based on the pattern
+        total_pattern_implied_length = 0
+        for part_type, content in parsed_pattern_parts:
+            if part_type == 'fixed':
+                total_pattern_implied_length += len(content)
+            elif part_type == 'placeholder_block':
+                total_pattern_implied_length += content # content is the length of the 'x' block
+
+        total_pattern_implied_length = max(MIN_USERNAME_LENGTH, total_pattern_implied_length)
+        total_pattern_implied_length = min(MAX_USERNAME_LENGTH, total_pattern_implied_length)
 
         for idx, (part_type, content) in enumerate(parsed_pattern_parts):
             if part_type == 'fixed':
-                current_uname_list.append(content)
-            elif part_type == 'placeholder':
-                # Only insert a seed word if this is the first 'x' encountered and no seed word has been used yet
+                current_username_parts.append(content)
+            elif part_type == 'placeholder_block':
+                block_len = content # This is the number of 'x's in the block
+
                 if not seed_word_inserted and current_seed_words:
-                    chosen_word = random.choice(current_seed_words)
-                    current_uname_list.append(chosen_word)
-                    seed_word_inserted = True
-                else:
-                    # Fill subsequent 'x' placeholders or if no seed words are available
-                    # If this is the very first segment and it's a placeholder, ensure it starts with a letter
-                    if idx == 0 and not current_uname_list: 
-                        current_uname_list.append(random.choice(string.ascii_lowercase))
+                    # This is the first 'x' block. Try to insert a word.
+                    
+                    # Calculate remaining fixed length and min_x_fill for subsequent blocks
+                    remaining_pattern_min_len = 0
+                    for subsequent_part_type, subsequent_content in parsed_pattern_parts[idx+1:]:
+                        if subsequent_part_type == 'fixed':
+                            remaining_pattern_min_len += len(subsequent_content)
+                        elif subsequent_part_type == 'placeholder_block':
+                            remaining_pattern_min_len += 1 # Assume minimum 1 char for subsequent 'x' blocks
+
+                    # Determine max word length to fit this block and overall pattern
+                    # current_len = len("".join(current_username_parts))
+                    # max_allowed_word_len = total_pattern_implied_length - current_len - remaining_pattern_min_len
+                    # max_allowed_word_len = max(MIN_USERNAME_LENGTH, min(max_allowed_word_len, MAX_USERNAME_LENGTH))
+                    
+                    # A simpler approach: aim for word to fit within block_len,
+                    # but also ensure the overall final username length is valid.
+                    
+                    chosen_word = None
+                    
+                    # Filter for words that start with a letter and are not too long for the *total* username
+                    valid_starting_words = [w for w in current_seed_words if w[0].isalpha()]
+
+                    # Prioritize words that are <= block_len, or closest to it
+                    candidate_words_by_fit = []
+                    for word in valid_starting_words:
+                        # Check if word + current_parts + remaining_pattern can fit total length
+                        hypothetical_total_len = len("".join(current_username_parts)) + len(word) + max(0, block_len - len(word)) + remaining_pattern_min_len
+                        
+                        if MIN_USERNAME_LENGTH <= hypothetical_total_len <= MAX_USERNAME_LENGTH:
+                            candidate_words_by_fit.append((abs(len(word) - block_len), word))
+                    
+                    if candidate_words_by_fit:
+                        candidate_words_by_fit.sort(key=lambda x: x[0]) # Sort by closeness to block_len
+                        # Pick a random word among those with the best fit
+                        best_fit_diff = candidate_words_by_fit[0][0]
+                        best_fit_words = [w for diff, w in candidate_words_by_fit if diff == best_fit_diff]
+                        chosen_word = random.choice(best_fit_words)
+                    elif valid_starting_words: # If no perfect fit, just pick any valid starting word
+                         # But ensure it allows for a valid username to be formed
+                        chosen_word = random.choice(valid_starting_words)
+
+
+                    if chosen_word:
+                        current_username_parts.append(chosen_word)
+                        seed_word_used = True
+                        
+                        # Fill the rest of THIS placeholder block if the word is shorter
+                        chars_to_fill_in_block = block_len - len(chosen_word)
+                        if chars_to_fill_in_block > 0:
+                            for _ in range(chars_to_fill_in_block):
+                                current_username_parts.append(random.choice(letters_digits))
+                        # If chosen_word is longer than block_len, it effectively overfills this block,
+                        # and the overall length validation will catch it later if it exceeds MAX_USERNAME_LENGTH.
                     else:
-                        current_uname_list.append(random.choice(letters))
+                        # Fallback: if no word chosen, fill the block with random characters
+                        for _ in range(block_len):
+                            if idx == 0 and not current_username_parts: # Ensure first char is letter if it's the start
+                                current_username_parts.append(random.choice(string.ascii_lowercase))
+                            else:
+                                current_username_parts.append(random.choice(letters_digits))
 
-        final_uname = "".join(current_uname_list)
+                else: # Not the first 'x' block, or no seed word was used for first
+                    # Fill entire block with random characters
+                    for _ in range(block_len):
+                        current_username_parts.append(random.choice(letters_digits))
 
-        # Ensure the generated username adheres to Telegram's general rules (length, first char)
-        if is_valid_username(final_uname): # Use helper for full Telegram validation
+        final_uname = "".join(current_username_parts)
+
+        # Final validation before adding to generated set
+        if is_valid_username(final_uname): 
             generated.add(final_uname)
         attempts += 1
 
@@ -340,20 +399,15 @@ async def generate_usernames(pattern: str, num_variations_to_try: int = 200, con
 async def check_username_availability(update: Update, context: ContextTypes.DEFAULT_TYPE, username: str) -> tuple[bool, str, str | None]:
     if not is_valid_username(username):
         logger.warning(f"Invalid username format (pre-API check): {username}")
-        # For an invalid format, it's not "available" or "taken", but "invalid"
         return False, username, None 
 
     try:
         chat = await context.bot.get_chat(f"@{username}")
 
-        # If get_chat succeeds and the username matches, it's taken
         if chat.username and chat.username.lower() == username.lower():
             logger.info(f"Username @{username} already exists.")
             return False, username, f"https://t.me/{chat.username}"
 
-        # If get_chat succeeds but username doesn't match (e.g., it's a channel, not a user),
-        # or it's a case where Telegram API responds with a chat object but username is not public,
-        # it's safer to consider it taken or not truly available for new public assignment.
         logger.info(f"Username @{username} responded with chat info, likely taken/reserved.")
         return False, username, None 
 
@@ -375,16 +429,14 @@ async def check_username_availability(update: Update, context: ContextTypes.DEFA
             logger.info(f"Username @{username} is likely available.")
             return True, username, f"https://t.me/{username}"
         
-        # Handle other BadRequest errors more gracefully
         logger.error(f"Telegram API BadRequest for {username}: {e}")
-        # If it's another BadRequest, assume it's taken or problematic
         return False, username, None 
     except Exception as e:
         logger.error(f"Unexpected error checking username {username}: {e}")
-        return False, username, None # Assume not available on unexpected errors
+        return False, username, None 
 
 # Function to display results
-async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, all_results: list[dict], pattern: str = None, is_bulk: bool = False): # Added is_bulk parameter
+async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, all_results: list[dict], pattern: str = None, is_bulk: bool = False): 
     available_names_info = [r for r in all_results if r['available']]
     taken_names_info = [r for r in all_results if not r['available']]
 
@@ -393,19 +445,16 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
 
     text_parts = []
     if pattern:
-        escaped_pattern_display = escape_markdown_v2(pattern) # Escaped here
+        escaped_pattern_display = escape_markdown_v2(pattern) 
         text_parts.append(get_text(context, 'checked_variations', total_checked=len(all_results), pattern=escaped_pattern_display))
-    else: # For bulk list
+    else: 
         text_parts.append(get_text(context, 'checked_list_usernames', total_checked=len(all_results)))
 
 
     def format_names_for_display(name_objects: list[dict]) -> list[str]:
         formatted = []
         for item in name_objects:
-            # Escape username for display within backticks or links
             escaped_username = escape_markdown_v2(item['username'])
-            # Link part of the Markdown requires escaping the URL too if it contains specific chars,
-            # but t.me links are usually safe. The main thing is the username itself.
             if item['link']:
                 formatted.append(f"[`@{escaped_username}`]({item['link']})")
             else:
@@ -467,9 +516,8 @@ async def process_check(
     if len(usernames) > 100: 
         warning_text = get_text(context, 'large_request_warning') + "\n\n"
 
-    # Send initial progress message
     try:
-        escaped_pattern_for_init_msg = escape_markdown_v2(pattern) if pattern else "" # Escaped here
+        escaped_pattern_for_init_msg = escape_markdown_v2(pattern) if pattern else "" 
         initial_message = await update.message.reply_text(
             warning_text + get_text(context, 'searching_names', count=len(usernames), pattern=escaped_pattern_for_init_msg), 
             parse_mode='Markdown',
@@ -477,29 +525,27 @@ async def process_check(
         )
         progress_msg_id = initial_message.message_id
         context.user_data['progress_message_id'] = progress_msg_id
-        context.user_data['stop_requested'] = False # Reset stop flag
+        context.user_data['stop_requested'] = False 
     except Exception as e:
         logger.error(f"Failed to send initial progress message: {e}")
         await update.effective_chat.send_message(get_text(context, 'operation_cancelled'))
         return ConversationHandler.END
 
 
-    check_delay = context.user_data.get('check_delay', 0.05) # Get delay from user_data
+    check_delay = context.user_data.get('check_delay', 0.05) 
 
-    # Wrap the entire loop in a try-except to catch CancelledError
     try:
         for i, uname in enumerate(usernames):
-            # Check for stop_requested at the beginning of each iteration
             if context.user_data.get('stop_requested'):
                 logger.info("Stop requested by user. Breaking loop.")
-                break # Break out of the loop
+                break 
 
             is_available, username_str, link = await check_username_availability(update, context, uname)
             all_results.append({'username': username_str, 'available': is_available, 'link': link})
 
-            if is_available: # Send new message only for available names
+            if is_available: 
                 try:
-                    escaped_username_str = escape_markdown_v2(username_str) # Escaped here
+                    escaped_username_str = escape_markdown_v2(username_str) 
                     msg_text = get_text(context, 'found_available_immediate', 
                                          username=f"[`@{escaped_username_str}`]({link})" if link else f"`@{escaped_username_str}`")
                     await update.effective_chat.send_message(msg_text, parse_mode='Markdown')
@@ -511,7 +557,6 @@ async def process_check(
             else:
                 taken_count += 1
 
-            # Update progress message periodically (every 1 name or every 1 second)
             current_time = loop.time()
             if (i + 1) % UPDATE_INTERVAL_COUNT == 0 or (current_time - last_update_time) >= UPDATE_INTERVAL_SECONDS:
                 try:
@@ -594,7 +639,7 @@ async def handle_button_callbacks(update: Update, context: ContextTypes.DEFAULT_
                 status_key = 'available_names' if item['available'] else 'taken_names'
                 status_text = translations[context.user_data['language']].get(status_key, translations['en'][status_key])
                 status = status_text.replace('✅ ', '').replace(' ()', '').replace('\n❌ ', '').strip()
-                formatted_results.append(f"{escape_markdown_v2(item['username'])} ({status})") # Escaped username for file
+                formatted_results.append(f"{escape_markdown_v2(item['username'])} ({status})") 
             await send_names_as_file(context, update.effective_chat.id, formatted_results, "all_checked_usernames.txt")
         else:
             await query.message.reply_text(get_text(context, 'no_names_to_save', filename="all_checked_usernames.txt"))
@@ -737,7 +782,6 @@ async def send_names_as_file(context: ContextTypes.DEFAULT_TYPE, chat_id: int, n
         await context.bot.send_message(chat_id=chat_id, text=get_text(context, 'no_names_to_save', filename=filename))
         return
 
-    # No need to escape here, this is for a plain text file.
     file_content = "\n".join(names_list) 
     file_stream = io.BytesIO(file_content.encode('utf-8'))
     file_stream.name = filename
@@ -815,4 +859,3 @@ if __name__ == '__main__':
     else:
         logger.warning("No WEBHOOK_URL set. Running in polling mode. This is not recommended for production on Railway.")
         app.run_polling()
-
