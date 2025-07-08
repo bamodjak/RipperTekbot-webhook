@@ -53,13 +53,12 @@ translations = {
         'language_set': "Language set to English.",
         'how_many_names': "How many names would you like to generate and check (1-500)?",
         'invalid_number': "Please enter a number between 1 and 500.",
-        # هذا هو السطر الذي تم تصحيحه
-        'send_pattern': "Send a sample pattern (e.g., `user_x_x_x` where 'x' is replaced by random chars/digits). Use double quotes \"\" for fixed parts (e.g., `\"my_name\"_x`):",
+        'send_pattern': "Send a sample pattern (e.g., `user_x_x_x` where 'x' is replaced by random chars/digits). Use double quotes `\"\"` for fixed parts (e.g., `\"my_name\"_x`):",
         'invalid_pattern': "Please provide a valid pattern.",
         'ask_delay': "Enter a delay between checks in seconds (e.g., 0.1 for 100ms, 1 for 1s). Enter 0 for no additional delay:",
         'invalid_delay': "Please enter a valid number for delay (e.g., 0.1, 1, 5).",
         'searching_names': "Searching for {count} usernames based on '{pattern}', please wait...",
-        'checking_progress': "Checking... {current_checked} of {total_to_check} names processed.\n✅ Available: {available_count}\n❌ Taken: {taken_count}",
+        'checking_progress': "Checking... {current_checked} of {total_to_check} names processed.\n✅ Available: {available_count}\n❌ Taken: {taken_count}\n\n(Updates may be delayed due to Telegram's limits)", # Updated progress message
         'large_request_warning': "⚠️ Warning: Checking a large number of names might take a long time and could sometimes lead to timeouts or forced pauses due to Telegram's rate limits.",
         'checked_variations': "Checked {total_checked} variations for pattern '{pattern}'.\n",
         'available_names': "✅ Available ({count}):",
@@ -104,13 +103,12 @@ translations = {
         'language_set': "تم تعيين اللغة إلى العربية.",
         'how_many_names': "كم عدد الأسماء التي تود توليدها وفحصها (1-500)؟",
         'invalid_number': "الرجاء إدخال رقم بين 1 و 500.",
-        # هذا هو السطر الذي تم تصحيحه
-        'send_pattern': "أرسل نمطاً مثالياً (مثل `user_x_x_x` حيث يتم استبدال 'x' بأحرف/أرقام عشوائية). استخدم علامتي الاقتباس \"\" للأجزاء الثابتة (مثال: `\"my_name\"_x` سيبقي \"my_name\" كما هي):",
+        'send_pattern': "أرسل نمطاً مثالياً (مثل `user_x_x_x` حيث يتم استبدال 'x' بأحرف/أرقام عشوائية). استخدم علامتي الاقتباس `\"\"` للأجزاء الثابتة (مثال: `\"my_name\"_x` سيبقي \"my_name\" كما هي):",
         'invalid_pattern': "الرجاء توفير نمط صالح.",
         'ask_delay': "أدخل تأخيراً بين عمليات الفحص بالثواني (مثال: 0.1 لـ 100 مللي ثانية، 1 لـ 1 ثانية). أدخل 0 لعدم وجود تأخير إضافي:",
         'invalid_delay': "الرجاء إدخال رقم صالح للتأخير (مثال: 0.1, 1, 5).",
         'searching_names': "جارٍ البحث عن {count} اسم مستخدم بناءً على '{pattern}'، الرجاء الانتظار...",
-        'checking_progress': "جارٍ الفحص... {current_checked} من {total_to_check} اسم تمت معالجته.\n✅ متاح: {available_count}\n❌ محجوز: {taken_count}",
+        'checking_progress': "جارٍ الفحص... {current_checked} من {total_to_check} اسم تمت معالجته.\n✅ متاح: {available_count}\n❌ محجوز: {taken_count}\n\n(قد تتأخر التحديثات بسبب قيود تلغرام)", # Updated progress message
         'large_request_warning': "⚠️ تحذير: فحص عدد كبير من الأسماء قد يستغرق وقتاً طويلاً وقد يؤدي أحياناً إلى مهلة أو توقف إجباري بسبب قيود الطلبات من تلغرام.",
         'checked_variations': "تم فحص {total_checked} اختلافاً للنمط '{pattern}'.\n",
         'available_names': "✅ متاح ({count}):",
@@ -243,7 +241,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return INITIAL_MENU
 
     elif query.data == 'back':
-        context.user_data['stop_requested'] = True # Ensure any ongoing process stops
+        context.user_data['stop_requested'] = True
         await query.edit_message_text(
             get_text(context, 'welcome'),
             reply_markup=get_main_menu_keyboard(context)
@@ -252,7 +250,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif query.data == 'stop_processing':
         context.user_data['stop_requested'] = True
-        # Send a message indicating stop and then trigger result display
         await query.edit_message_text(get_text(context, 'operation_cancelled'), reply_markup=get_main_menu_keyboard(context))
         return INITIAL_MENU
 
@@ -277,9 +274,8 @@ async def handle_count_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return ASK_COUNT
         
         context.user_data['num_to_generate_display'] = count
-        # Move to asking for pattern after receiving count
         await update.message.reply_text(get_text(context, 'send_pattern'), parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard(context))
-        return ASK_PATTERN # This will trigger handle_pattern_input next
+        return ASK_PATTERN
     except ValueError:
         await update.message.reply_text(get_text(context, 'invalid_number'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_COUNT
@@ -292,39 +288,18 @@ async def handle_pattern_input(update: Update, context: ContextTypes.DEFAULT_TYP
         return ASK_PATTERN
     
     context.user_data['pattern'] = pattern
-    # Now ask for delay
     await update.message.reply_text(get_text(context, 'ask_delay'), reply_markup=get_stop_and_back_keyboard(context))
-    return ASK_DELAY # This will trigger handle_delay_input next
+    return ASK_DELAY
 
-# Handler for delay input
+# Handler for delay input (This handler now directly initiates the main processing loop)
 async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         delay = float(update.message.text.strip())
         if delay < 0:
             raise ValueError
         context.user_data['check_delay'] = delay
-        # Now proceed to start the checking process using ask_pattern as the main processing function
-        # We need to pass the initial message object for editing progress.
-        # This structure implies calling ask_pattern *from here* directly.
-        # However, ask_pattern expects update.message, which comes from a MessageHandler.
-        # A simpler way is to make the processing function a standalone call.
         
-        # Let's refactor: ask_pattern will be the *handler* for the pattern, and then it calls a shared processing function.
-        # For simplicity, let's call the *original* ask_pattern logic from here (after collecting all info).
-        
-        # We already have update.message. This is valid.
-        # Let's ensure the initial "Searching for..." message is sent by this handler.
-        
-        # Removed redundant call to `ask_pattern` from here, as it will be called by ConversationHandler
-        # when transitioning to that state.
-        
-        # Now, prepare to send the initial "Searching..." message and start the loop.
-        # This needs to be part of a MessageHandler that returns a new state or END.
-        # So, the final processing loop needs to be its own handler for a new state,
-        # OR we combine handle_delay_input into the start of the processing.
-        
-        # Best approach: handle_delay_input sends the "Searching..." message and starts the loop directly.
-        
+        # --- Start of the main processing logic (moved from ask_pattern) ---
         pattern = context.user_data['pattern']
         num_to_display = context.user_data.get('num_to_generate_display', 20)
         check_delay = context.user_data.get('check_delay', 0.05)
@@ -344,8 +319,10 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         available_count = 0
         taken_count = 0
         last_update_time = asyncio.get_event_loop().time()
-        UPDATE_INTERVAL_SECONDS = 10
-        UPDATE_INTERVAL_COUNT = 50
+        
+        # Updated: Attempt to update frequently
+        UPDATE_INTERVAL_SECONDS = 1 
+        UPDATE_INTERVAL_COUNT = 1 
 
         for i, uname in enumerate(raw_usernames):
             if context.user_data.get('stop_requested'):
@@ -374,20 +351,23 @@ async def handle_delay_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         reply_markup=get_stop_and_back_keyboard(context)
                     )
                     last_update_time = current_time
+                except BadRequest as e: # Catch BadRequest specific to editMessageText rate limits
+                    logger.warning(f"Failed to edit progress message (likely rate limit or formatting): {e}. Will try again later.")
                 except Exception as e:
-                    logger.error(f"Failed to edit progress message: {e}")
-            
+                    logger.error(f"Unexpected error when editing progress message: {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
+                
             await asyncio.sleep(check_delay)
 
         await display_results(update, context, all_results, is_final=True, pattern=pattern)
         return INITIAL_MENU
+        # --- End of main processing logic ---
 
     except ValueError:
         await update.message.reply_text(get_text(context, 'invalid_delay'), reply_markup=get_stop_and_back_keyboard(context))
         return ASK_DELAY
 
 # This function is now just a helper to display final/partial results
-# The main processing loop moved to handle_delay_input
+# The main processing loop moved to handle_delay_input for pattern generation and bulk_list
 async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, all_results: list[dict], is_final: bool, pattern: str = None):
     available_names_info = [r for r in all_results if r['available']]
     taken_names_info = [r for r in all_results if not r['available']]
@@ -415,7 +395,7 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
         text_parts.append(get_text(context, 'available_names', count=len(available_names_info)))
         display_available = format_names_for_display(available_names_info)
         text_parts.append("\n".join(display_available))
-        if len(available_names_info) > context.user_data.get('num_to_generate_display', len(available_names_info)): # Use display limit only for available from generation
+        if len(available_names_info) > context.user_data.get('num_to_generate_display', len(available_names_info)):
             text_parts.append(f"...and {len(available_names_info) - context.user_data.get('num_to_generate_display', len(available_names_info))} more available names.")
     else:
         text_parts.append(get_text(context, 'no_available_names'))
@@ -442,15 +422,13 @@ async def display_results(update: Update, context: ContextTypes.DEFAULT_TYPE, al
 
 # This function is now ONLY for handling pattern input and moving to ASK_DELAY.
 # The main processing logic is moved to handle_delay_input.
+# It's called when the user sends a pattern.
 async def ask_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pattern = update.message.text.strip()
-    if not pattern:
-        await update.message.reply_text(get_text(context, 'invalid_pattern'), reply_markup=get_stop_and_back_keyboard(context))
-        return ASK_PATTERN
-    
-    context.user_data['pattern'] = pattern
-    await update.message.reply_text(get_text(context, 'ask_delay'), reply_markup=get_stop_and_back_keyboard(context))
-    return ASK_DELAY
+    # This function's content has been moved to handle_pattern_input.
+    # It just returns the state for the conversation handler.
+    pass # This function should ideally not be called directly from ConversationHandler anymore
+    # Its logic is now in handle_pattern_input, which is the MessageHandler for ASK_PATTERN state.
+
 
 # Handle bulk checking request (modified to match new processing flow)
 async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -463,19 +441,19 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(names) > 100:
         warning_text = get_text(context, 'large_request_warning') + "\n\n"
 
-    # For bulk list, we don't ask for delay, use default/fixed delay
     context.user_data['check_delay'] = 0.05 # Default delay for bulk check
 
     initial_message = await update.message.reply_text(warning_text + get_text(context, 'checking_list'), parse_mode='Markdown', reply_markup=get_stop_and_back_keyboard(context))
     context.user_data['progress_message_id'] = initial_message.message_id
-    context.user_data['stop_requested'] = False # Reset stop flag
+    context.user_data['stop_requested'] = False
 
     all_results = []
     available_count = 0
     taken_count = 0
     last_update_time = asyncio.get_event_loop().time()
-    UPDATE_INTERVAL_SECONDS = 10
-    UPDATE_INTERVAL_COUNT = 50
+    
+    UPDATE_INTERVAL_SECONDS = 1
+    UPDATE_INTERVAL_COUNT = 1
 
     for i, name in enumerate(names):
         if context.user_data.get('stop_requested'):
@@ -504,12 +482,13 @@ async def bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=get_stop_and_back_keyboard(context)
                 )
                 last_update_time = current_time
+            except BadRequest as e:
+                logger.warning(f"Failed to edit progress message (likely rate limit or formatting): {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
             except Exception as e:
-                logger.error(f"Failed to edit progress message: {e}")
+                logger.error(f"Unexpected error when editing progress message: {e}. Chat ID: {update.effective_chat.id}, Message ID: {context.user_data['progress_message_id']}")
 
         await asyncio.sleep(context.user_data['check_delay'])
 
-    # Final display of results
     await display_results(update, context, all_results, is_final=True)
     return INITIAL_MENU
 
@@ -552,17 +531,17 @@ if __name__ == '__main__':
             ],
 
             ASK_PATTERN: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pattern_input),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pattern_input), # Renamed ask_pattern to handle_pattern_input
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
             ],
             
-            ASK_DELAY: [ # New state for delay input
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input),
+            ASK_DELAY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delay_input), # This now starts processing
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
             ],
 
-            BULK_LIST: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, bulk_list), # Bulk list directly starts processing
+            BULK_LIST: [ # This state directly handles bulk list input and starts processing
+                MessageHandler(filters.TEXT & ~filters.COMMAND, bulk_list),
                 CallbackQueryHandler(button, pattern="^back$|^stop_processing$")
             ],
             HOW_TO_INFO: [
