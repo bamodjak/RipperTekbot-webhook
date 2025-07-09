@@ -4,6 +4,7 @@ import random
 import string
 import asyncio
 import re
+import tempfile # For creating temporary files
 from typing import List, Dict, Set, Optional
 
 # Setup logging
@@ -17,7 +18,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.error import TimedOut, RetryAfter, TelegramError
 from telegram.ext import (
     ApplicationBuilder,
@@ -49,7 +50,7 @@ if not WEBHOOK_URL:
 # States for ConversationHandler
 (INITIAL_MENU, ASK_USERNAME_COUNT, ASK_PATTERN, ASK_DELAY, BULK_LIST,
  HOW_TO_INFO, SET_LANGUAGE, ASK_WORD_LENGTH, ASK_WORD_COUNT,
- ASK_BOT_SEARCH) = range(10) # Adjusted range as SHOW_WORD_RESULTS is not a distinct state
+ ASK_BOT_SEARCH) = range(10)
 
 # --- Data for Simulation and Generation ---
 
@@ -114,8 +115,8 @@ translations = {
         'check_complete': "✅ Simulation Complete!\n\n📊 Results:\n• Total checked: {total_checked}\n• Available: {available_count}\n• Taken: {taken_count}",
         'available_usernames': "✅ Simulated Available Usernames:",
         'no_available': "❌ No simulated available usernames found.",
-        'send_bulk_list': "📄 Send your list of usernames (one per line, max 500):\n\n(Note: Availability check is simulated)",
-        'invalid_bulk_list': "❌ Invalid list. Please send usernames (one per line, max 500).",
+        'send_bulk_list': "📄 Send your list of usernames (one per line, max 500) OR upload a .txt file:\n\n(Note: Availability check is simulated)",
+        'invalid_bulk_list': "❌ Invalid list. Please send usernames (one per line, max 500) or upload a valid .txt file.",
         'bulk_checking': "🔍 Simulating check for {count} usernames from your list...",
         'how_to_text': """📖 **How to Use RipperTek Bot**
 
@@ -133,7 +134,8 @@ translations = {
 • Perfect for creative projects
 
 📄 **Bulk Check:**
-• Send a list of usernames
+• Send a list of usernames (one per line)
+• **OR upload a .txt file containing usernames**
 • Simulate availability in bulk
 • Get detailed simulated results
 
@@ -147,8 +149,8 @@ translations = {
 • Bot names must end with 'bot'""",
         'word_length': "📏 Enter desired word length (3-15 characters) or a pattern (e.g., `app_x_x`):\n\n💡 Tips:\n• Use 'x' for random letters\n• Use quotes for fixed parts: `\"my\"_x_x`",
         'invalid_word_length': "❌ Please enter a length between 3 and 15, or a valid pattern.",
-        'word_count': "🔢 How many words to generate? (1-1000)",
-        'invalid_word_count': "❌ Please enter a number between 1 and 1000.",
+        'word_count': "🔢 How many words to generate? (1-1,000,000)",
+        'invalid_word_count': "❌ Please enter a number between 1 and 1,000,000.",
         'generated_words': "📚 Generated Words:",
         'bot_search_prompt': "🤖 Enter bot name to search (without @, must end with 'bot'):\nExample: mycoolbot\n\n(Note: Availability check is simulated)",
         'bot_search_results': "🤖 Simulated Bot Search Results for '{name}':",
@@ -159,7 +161,14 @@ translations = {
         'timeout_error': "⏰ Simulated request timed out. Please try again.",
         'network_error': "🌐 Simulated network error. Please check your connection.",
         'error_occurred': "❌ An error occurred: {error}",
-        'operation_cancelled': "Operation cancelled. Returning to main menu."
+        'operation_cancelled': "Operation cancelled. Returning to main menu.",
+        'download_all_usernames_btn': "⬇️ Download All Usernames",
+        'download_available_usernames_btn': "⬇️ Download Available Usernames",
+        'download_words_btn': "⬇️ Download Words",
+        'download_bulk_all_btn': "⬇️ Download All Checked",
+        'download_bulk_available_btn': "⬇️ Download Available Only",
+        'file_sent': "✅ File sent successfully!",
+        'no_data_to_download': "❌ No data to download. Please generate or check first."
     },
     'ar': {
         'welcome': "🤖 مرحباً بك في بوت RipperTek! اختر خياراً:",
@@ -185,8 +194,8 @@ translations = {
         'check_complete': "✅ اكتملت المحاكاة!\n\n📊 النتائج:\n• إجمالي المفحوص: {total_checked}\n• متاح: {available_count}\n• مأخوذ: {taken_count}",
         'available_usernames': "✅ أسماء المستخدمين المتاحة (محاكاة):",
         'no_available': "❌ لم يتم العثور على أسماء مستخدمين متاحة (محاكاة).",
-        'send_bulk_list': "📄 أرسل قائمتك من أسماء المستخدمين (واحد في كل سطر، أقصى 500):\n\n(ملاحظة: فحص التوفر محاكى)",
-        'invalid_bulk_list': "❌ قائمة غير صحيحة. أرسل أسماء مستخدمين (واحد في كل سطر، أقصى 500).",
+        'send_bulk_list': "📄 أرسل قائمتك من أسماء المستخدمين (واحد في كل سطر، أقصى 500) أو قم بتحميل ملف .txt:\n\n(ملاحظة: فحص التوفر محاكى)",
+        'invalid_bulk_list': "❌ قائمة غير صحيحة. أرسل أسماء مستخدمين (واحد في كل سطر، أقصى 500) أو قم بتحميل ملف .txt صالح.",
         'bulk_checking': "🔍 محاكاة فحص {count} أسماء مستخدمين من قائمتك...",
         'how_to_text': """📖 **كيفية استخدام بوت RipperTek**
 
@@ -204,7 +213,8 @@ translations = {
 • مثالي للمشاريع الإبداعية
 
 📄 **الفحص المجمع:**
-• أرسل قائمة أسماء مستخدمين
+• أرسل قائمة أسماء مستخدمين (واحد في كل سطر)
+• **أو قم بتحميل ملف .txt يحتوي على أسماء المستخدمين**
 • محاكاة فحص التوفر بالجملة
 • احصل على نتائج مفصلة (محاكاة)
 
@@ -218,8 +228,8 @@ translations = {
 • أسماء البوت يجب أن تنتهي بـ 'bot'""",
         'word_length': "📏 أدخل طول الكلمة المطلوب (3-15 حرف) أو نمطاً (مثال: `app_x_x`):\n\n💡 نصائح:\n• استخدم 'x' للحروف العشوائية\n• استخدم الاقتباس للأجزاء الثابتة: `\"اسمي\"_x_x`",
         'invalid_word_length': "❌ أدخل طولاً بين 3 و 15، أو نمطاً صحيحاً.",
-        'word_count': "🔢 كم كلمة تريد إنشاؤها؟ (1-1000)",
-        'invalid_word_count': "❌ أدخل رقماً بين 1 و 1000.",
+        'word_count': "🔢 كم كلمة تريد إنشاؤها؟ (1-1,000,000)",
+        'invalid_word_count': "❌ أدخل رقماً بين 1 و 1,000,000.",
         'generated_words': "📚 الكلمات المولدة:",
         'bot_search_prompt': "🤖 أدخل اسم البوت للبحث (بدون @، يجب أن ينتهي بـ 'bot'):\nمثال: mycoolbot\n\n(ملاحظة: فحص التوفر محاكى)",
         'bot_search_results': "🤖 نتائج البحث عن البوت '{name}' (محاكاة):",
@@ -230,7 +240,14 @@ translations = {
         'timeout_error': "⏰ انتهت مهلة الطلب (محاكاة). حاول مرة أخرى.",
         'network_error': "🌐 خطأ في الشبكة (محاكاة). تحقق من اتصالك.",
         'error_occurred': "❌ حدث خطأ: {error}",
-        'operation_cancelled': "تم إلغاء العملية. العودة إلى القائمة الرئيسية."
+        'operation_cancelled': "تم إلغاء العملية. العودة إلى القائمة الرئيسية.",
+        'download_all_usernames_btn': "⬇️ تحميل جميع أسماء المستخدمين",
+        'download_available_usernames_btn': "⬇️ تحميل أسماء المستخدمين المتاحة",
+        'download_words_btn': "⬇️ تحميل الكلمات",
+        'download_bulk_all_btn': "⬇️ تحميل جميع المفحوصة",
+        'download_bulk_available_btn': "⬇️ تحميل المتاحة فقط",
+        'file_sent': "✅ تم إرسال الملف بنجاح!",
+        'no_data_to_download': "❌ لا توجد بيانات للتحميل. يرجى التوليد أو الفحص أولاً."
     }
 }
 
@@ -447,6 +464,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return INITIAL_MENU
     
+    # --- Download Handlers ---
+    elif query.data == 'download_usernames_all':
+        await send_download_file(context, 'usernames_all')
+        return INITIAL_MENU
+    elif query.data == 'download_usernames_available':
+        await send_download_file(context, 'usernames_available')
+        return INITIAL_MENU
+    elif query.data == 'download_words':
+        await send_download_file(context, 'words')
+        return INITIAL_MENU
+    elif query.data == 'download_bulk_all':
+        await send_download_file(context, 'bulk_all')
+        return INITIAL_MENU
+    elif query.data == 'download_bulk_available':
+        await send_download_file(context, 'bulk_available')
+        return INITIAL_MENU
+
     return INITIAL_MENU # Fallback to initial menu if unexpected callback
 
 async def handle_username_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -512,13 +546,77 @@ async def handle_delay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
                 reply_markup=create_home_keyboard(lang)
             )
             
-            available_usernames = await generate_usernames_with_progress(
-                pattern, count, delay, status_msg, lang
-            )
+            all_generated_usernames = [] # Store all generated for download
+            available_usernames = [] # Store only available for display and download
             
+            checker = SimulatedTelegramUsernameChecker()
+            
+            checked_count = 0
+            taken_count = 0
+
+            for i in range(count):
+                username = generate_username_from_pattern(pattern)
+                all_generated_usernames.append(username) # Add to all generated list
+                
+                if not (MIN_USERNAME_LENGTH <= len(username) <= MAX_USERNAME_LENGTH):
+                    continue # Skip invalid length usernames
+                
+                try:
+                    is_available = await checker.check_username(username, delay)
+                    checked_count += 1
+                    
+                    if is_available:
+                        available_usernames.append(username)
+                    else:
+                        taken_count += 1
+                    
+                    if checked_count % 10 == 0 or checked_count == count:
+                        current_results_display = ""
+                        if available_usernames:
+                            current_results_display = f"\n\n✅ {get_text('available_usernames', lang)}\n"
+                            for uname in available_usernames[-5:]:
+                                current_results_display += f"@{uname}\n"
+                            if len(available_usernames) > 5:
+                                current_results_display += "...\n"
+                        
+                        progress_text = get_text('checking_progress', lang,
+                            current_checked=checked_count,
+                            total_to_check=count,
+                            available_count=len(available_usernames),
+                            taken_count=taken_count,
+                            remaining_count=count - checked_count
+                        ) + current_results_display
+                        
+                        try:
+                            await status_msg.edit_text(
+                                progress_text,
+                                reply_markup=create_home_keyboard(lang)
+                            )
+                        except TelegramError as e:
+                            if "Message is not modified" not in str(e):
+                                logger.warning(f"Could not edit message: {e}")
+                    
+                    await asyncio.sleep(delay)
+                        
+                except Exception as e:
+                    logger.error(f"Error during simulated username check for {username}: {e}")
+                    continue
+            
+            # Store results in user_data for download
+            context.user_data['last_generated_usernames_all'] = all_generated_usernames
+            context.user_data['last_generated_usernames_available'] = available_usernames
+
+            # Create download buttons
+            download_keyboard_buttons = []
+            if all_generated_usernames:
+                download_keyboard_buttons.append(InlineKeyboardButton(get_text('download_all_usernames_btn', lang), callback_data='download_usernames_all'))
+            if available_usernames:
+                download_keyboard_buttons.append(InlineKeyboardButton(get_text('download_available_usernames_btn', lang), callback_data='download_usernames_available'))
+            
+            final_keyboard = InlineKeyboardMarkup([download_keyboard_buttons, [InlineKeyboardButton(get_text('home_btn', lang), callback_data='home')]]) if download_keyboard_buttons else create_main_keyboard(lang)
+
             if available_usernames:
                 result_text = f"{get_text('available_usernames', lang)}\n\n"
-                # Limit display for Telegram message length
                 for username in available_usernames[:20]:
                     result_text += f"@{username}\n"
                 
@@ -529,7 +627,7 @@ async def handle_delay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             
             await status_msg.edit_text(
                 result_text,
-                reply_markup=create_main_keyboard(lang)
+                reply_markup=final_keyboard
             )
             
             return INITIAL_MENU
@@ -552,68 +650,6 @@ async def handle_delay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             reply_markup=create_main_keyboard(lang)
         )
         return INITIAL_MENU
-
-async def generate_usernames_with_progress(pattern: str, count: int, delay: float,
-                                         status_msg: Update.message, lang: str) -> List[str]:
-    """Generate usernames with simulated progress updates and real-time results."""
-    available_usernames = []
-    checked_count = 0
-    taken_count = 0
-    
-    checker = SimulatedTelegramUsernameChecker() # Initialize checker
-    
-    for i in range(count):
-        username = generate_username_from_pattern(pattern)
-        
-        # Ensure generated username meets basic Telegram length requirements for simulation
-        if not (MIN_USERNAME_LENGTH <= len(username) <= MAX_USERNAME_LENGTH):
-            continue # Skip invalid length usernames
-        
-        try:
-            is_available = await checker.check_username(username, delay)
-            checked_count += 1
-            
-            if is_available:
-                available_usernames.append(username)
-            else:
-                taken_count += 1
-            
-            # Update progress message periodically or at the end
-            if checked_count % 10 == 0 or checked_count == count:
-                current_results_display = ""
-                if available_usernames:
-                    current_results_display = f"\n\n✅ {get_text('available_usernames', lang)}\n"
-                    # Show last few available usernames for real-time feel
-                    for uname in available_usernames[-5:]:
-                        current_results_display += f"@{uname}\n"
-                    if len(available_usernames) > 5:
-                        current_results_display += "...\n"
-                
-                progress_text = get_text('checking_progress', lang,
-                    current_checked=checked_count,
-                    total_to_check=count,
-                    available_count=len(available_usernames),
-                    taken_count=taken_count,
-                    remaining_count=count - checked_count
-                ) + current_results_display
-                
-                try:
-                    await status_msg.edit_text(
-                        progress_text,
-                        reply_markup=create_home_keyboard(lang)
-                    )
-                except TelegramError as e:
-                    # Ignore "Message is not modified" or other minor edit errors
-                    if "Message is not modified" not in str(e):
-                        logger.warning(f"Could not edit message: {e}")
-                
-            await asyncio.sleep(delay) # Ensure delay is respected between checks
-                
-        except Exception as e:
-            logger.error(f"Error during simulated username check for {username}: {e}")
-            continue # Continue with next username even if one fails
-            
-    return available_usernames
 
 def generate_username_from_pattern(pattern: str) -> str:
     """Generate username from pattern, handling quoted parts and 'x' placeholders."""
@@ -687,14 +723,23 @@ async def handle_word_count(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     lang = get_language(context)
     
     try:
+        # Increased limit to 1,000,000
         count = int(update.message.text.strip())
-        if 1 <= count <= 1000:
+        if 1 <= count <= 1_000_000: # Updated limit
             length = context.user_data.get('word_length')
             pattern = context.user_data.get('word_pattern')
             
             generator = WordGenerator(lang)
             words = generator.generate_words(length=length, count=count, pattern=pattern)
             
+            context.user_data['last_generated_words'] = words # Store for download
+
+            download_keyboard_buttons = []
+            if words:
+                download_keyboard_buttons.append(InlineKeyboardButton(get_text('download_words_btn', lang), callback_data='download_words'))
+            
+            final_keyboard = InlineKeyboardMarkup([download_keyboard_buttons, [InlineKeyboardButton(get_text('home_btn', lang), callback_data='home')]]) if download_keyboard_buttons else create_main_keyboard(lang)
+
             if words:
                 result_text = f"{get_text('generated_words', lang)}\n\n"
                 # Display words in chunks if too many for a single message
@@ -709,7 +754,7 @@ async def handle_word_count(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             
             await update.message.reply_text(
                 result_text,
-                reply_markup=create_main_keyboard(lang)
+                reply_markup=final_keyboard
             )
             return INITIAL_MENU
         else:
@@ -732,55 +777,50 @@ async def handle_word_count(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return INITIAL_MENU
 
-async def handle_bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle bulk username list."""
+async def _perform_bulk_check(update: Update, context: ContextTypes.DEFAULT_TYPE, usernames_to_check: List[str]) -> int:
+    """Helper function to perform the actual bulk check logic."""
     lang = get_language(context)
-    text = update.message.text.strip()
     
-    # Split by newline, remove @, strip whitespace, filter empty lines
-    usernames = [line.strip().replace('@', '') for line in text.split('\n') if line.strip()]
-    
-    checker = SimulatedTelegramUsernameChecker()
-    # Filter for valid format usernames
-    usernames = [u for u in usernames if checker.is_valid_username_format(u)]
-    
-    if not usernames or len(usernames) > 500:
-        await update.message.reply_text(
+    if not usernames_to_check or len(usernames_to_check) > 500: # Still limit to 500 for processing efficiency
+        await update.effective_message.reply_text(
             get_text('invalid_bulk_list', lang),
             reply_markup=create_home_keyboard(lang)
         )
         return BULK_LIST
     
-    # Use the delay from user_data or a default
     delay = context.user_data.get('delay', 0.1)
 
-    status_msg = await update.message.reply_text(
-        get_text('bulk_checking', lang, count=len(usernames)),
+    status_msg = await update.effective_message.reply_text(
+        get_text('bulk_checking', lang, count=len(usernames_to_check)),
         reply_markup=create_home_keyboard(lang)
     )
     
+    checked_results = [] # Store {username, is_available} for download
     available_usernames = []
     checked_count = 0
     taken_count = 0
     
-    for username in usernames:
+    checker = SimulatedTelegramUsernameChecker()
+
+    for username in usernames_to_check:
         try:
             is_available = await checker.check_username(username, delay)
             checked_count += 1
             
+            checked_results.append({'username': username, 'is_available': is_available})
+
             if is_available:
                 available_usernames.append(username)
             else:
                 taken_count += 1
             
-            # Update progress periodically
-            if checked_count % 10 == 0 or checked_count == len(usernames):
+            if checked_count % 10 == 0 or checked_count == len(usernames_to_check):
                 progress_text = get_text('checking_progress', lang,
                     current_checked=checked_count,
-                    total_to_check=len(usernames),
+                    total_to_check=len(usernames_to_check),
                     available_count=len(available_usernames),
                     taken_count=taken_count,
-                    remaining_count=len(usernames) - checked_count
+                    remaining_count=len(usernames_to_check) - checked_count
                 )
                 
                 try:
@@ -792,15 +832,26 @@ async def handle_bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     if "Message is not modified" not in str(e):
                         logger.warning(f"Could not edit message during bulk check: {e}")
                 
-            await asyncio.sleep(delay) # Respect delay
+            await asyncio.sleep(delay)
                 
         except Exception as e:
             logger.error(f"Error during simulated bulk check for {username}: {e}")
-            continue # Continue with next username
+            continue
     
+    context.user_data['last_bulk_checked_all'] = checked_results
+    context.user_data['last_bulk_checked_available'] = available_usernames
+
+    download_keyboard_buttons = []
+    if checked_results:
+        download_keyboard_buttons.append(InlineKeyboardButton(get_text('download_bulk_all_btn', lang), callback_data='download_bulk_all'))
+    if available_usernames:
+        download_keyboard_buttons.append(InlineKeyboardButton(get_text('download_bulk_available_btn', lang), callback_data='download_bulk_available'))
+
+    final_keyboard = InlineKeyboardMarkup([download_keyboard_buttons, [InlineKeyboardButton(get_text('home_btn', lang), callback_data='home')]]) if download_keyboard_buttons else create_main_keyboard(lang)
+
     if available_usernames:
         result_text = f"{get_text('available_usernames', lang)}\n\n"
-        for username in available_usernames[:30]:  # Limit display
+        for username in available_usernames[:30]:
             result_text += f"@{username}\n"
         
         if len(available_usernames) > 30:
@@ -810,10 +861,64 @@ async def handle_bulk_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     await status_msg.edit_text(
         result_text,
-        reply_markup=create_main_keyboard(lang)
+        reply_markup=final_keyboard
     )
     
     return INITIAL_MENU
+
+async def handle_bulk_list_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle bulk username list sent as plain text."""
+    text = update.message.text.strip()
+    usernames = [line.strip().replace('@', '') for line in text.split('\n') if line.strip()]
+    
+    checker = SimulatedTelegramUsernameChecker()
+    valid_usernames = [u for u in usernames if checker.is_valid_username_format(u)]
+
+    return await _perform_bulk_check(update, context, valid_usernames)
+
+async def handle_bulk_list_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle bulk username list sent as a .txt file."""
+    lang = get_language(context)
+    document = update.message.document
+
+    if not document.file_name.lower().endswith('.txt'):
+        await update.message.reply_text(
+            get_text('invalid_bulk_list', lang),
+            reply_markup=create_home_keyboard(lang)
+        )
+        return BULK_LIST
+
+    try:
+        file_id = document.file_id
+        new_file = await context.bot.get_file(file_id)
+        
+        # Download the file to a temporary location
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as temp_file:
+            await new_file.download_to_memory(out=temp_file)
+            temp_file_path = temp_file.name
+
+        # Read content from the temporary file
+        with open(temp_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            file_content = f.read()
+        
+        # Clean up the temporary file
+        os.remove(temp_file_path)
+
+        usernames = [line.strip().replace('@', '') for line in file_content.split('\n') if line.strip()]
+        
+        checker = SimulatedTelegramUsernameChecker()
+        valid_usernames = [u for u in usernames if checker.is_valid_username_format(u)]
+
+        return await _perform_bulk_check(update, context, valid_usernames)
+
+    except Exception as e:
+        logger.error(f"Error handling bulk file upload: {e}", exc_info=True)
+        await update.message.reply_text(
+            get_text('error_occurred', lang, error="Failed to process file."),
+            reply_markup=create_home_keyboard(lang)
+        )
+        return BULK_LIST
+
 
 async def handle_bot_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle bot username search."""
@@ -861,6 +966,62 @@ async def handle_bot_search(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     return INITIAL_MENU
 
+async def send_download_file(context: ContextTypes.DEFAULT_TYPE, data_type: str) -> None:
+    """Sends the requested data as a text file."""
+    lang = get_language(context)
+    file_content = ""
+    file_name = ""
+
+    if data_type == 'usernames_all':
+        data = context.user_data.get('last_generated_usernames_all')
+        if data:
+            file_content = "\n".join([f"@{u}" for u in data])
+            file_name = "generated_usernames_all.txt"
+    elif data_type == 'usernames_available':
+        data = context.user_data.get('last_generated_usernames_available')
+        if data:
+            file_content = "\n".join([f"@{u}" for u in data])
+            file_name = "generated_usernames_available.txt"
+    elif data_type == 'words':
+        data = context.user_data.get('last_generated_words')
+        if data:
+            file_content = "\n".join(data)
+            file_name = "generated_words.txt"
+    elif data_type == 'bulk_all':
+        data = context.user_data.get('last_bulk_checked_all')
+        if data:
+            file_content = "\n".join([f"@{item['username']} ({get_text('available', lang) if item['is_available'] else get_text('taken', lang)})" for item in data])
+            file_name = "bulk_checked_usernames_all.txt"
+    elif data_type == 'bulk_available':
+        data = context.user_data.get('last_bulk_checked_available')
+        if data:
+            file_content = "\n".join([f"@{u}" for u in data])
+            file_name = "bulk_checked_usernames_available.txt"
+    
+    if file_content and file_name:
+        try:
+            # Create a temporary file
+            with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8', suffix='.txt') as temp_file:
+                temp_file.write(file_content)
+                temp_file_path = temp_file.name
+            
+            # Send the file
+            with open(temp_file_path, 'rb') as f:
+                await context.bot.send_document(chat_id=context.effective_chat.id, document=InputFile(f, filename=file_name))
+            
+            await context.effective_message.reply_text(get_text('file_sent', lang), reply_markup=create_main_keyboard(lang))
+
+        except Exception as e:
+            logger.error(f"Error sending file: {e}", exc_info=True)
+            await context.effective_message.reply_text(get_text('error_occurred', lang, error=str(e)), reply_markup=create_main_keyboard(lang))
+        finally:
+            # Clean up the temporary file
+            if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+    else:
+        await context.effective_message.reply_text(get_text('no_data_to_download', lang), reply_markup=create_main_keyboard(lang))
+
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel conversation."""
     lang = get_language(context)
@@ -907,7 +1068,15 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            INITIAL_MENU: [CallbackQueryHandler(button_handler)],
+            INITIAL_MENU: [
+                CallbackQueryHandler(button_handler),
+                # Add download button handlers to INITIAL_MENU state
+                CallbackQueryHandler(button_handler, pattern='^download_usernames_all$'),
+                CallbackQueryHandler(button_handler, pattern='^download_usernames_available$'),
+                CallbackQueryHandler(button_handler, pattern='^download_words$'),
+                CallbackQueryHandler(button_handler, pattern='^download_bulk_all$'),
+                CallbackQueryHandler(button_handler, pattern='^download_bulk_available$'),
+            ],
             ASK_USERNAME_COUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_username_count),
                 CallbackQueryHandler(button_handler, pattern='^home$') # Allow going home from here
@@ -929,7 +1098,8 @@ def main():
                 CallbackQueryHandler(button_handler, pattern='^home$')
             ],
             BULK_LIST: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bulk_list),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bulk_list_text), # Handles text input
+                MessageHandler(filters.Document.TEXT & filters.Document.FILE_EXTENSION("txt"), handle_bulk_list_file), # Handles .txt file upload
                 CallbackQueryHandler(button_handler, pattern='^home$')
             ],
             ASK_BOT_SEARCH: [
