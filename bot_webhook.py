@@ -3,7 +3,6 @@ import math
 import io 
 from pathlib import Path
 from typing import List, Dict, Any, Generator
-import asyncio 
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -157,19 +156,6 @@ async def send_generated_stream(
         preview_sent = False
 
         for line in line_iterator: 
-            # Check for cancellation before processing each line
-            try:
-                await asyncio.sleep(0.0001) # Allows asyncio to check for cancellations and yield control
-            except asyncio.CancelledError:
-                print(f"send_generated_stream was cancelled by command for chat {chat_id}.")
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=original_message_id,
-                    text=f"❌ Generation stopped by command. (Generated {actual_generated_lines_count:,} lines, sent {format_bytes(total_bytes_sent)}).",
-                    reply_markup=None
-                )
-                raise # Re-raise to propagate cancellation and skip further processing
-
             actual_generated_lines_count += 1
             line_bytes = line.encode('utf-8')
 
@@ -289,7 +275,7 @@ async def send_generated_stream(
 
 # Define the custom Reply Keyboard (always on display)
 REPLY_KEYBOARD_MARKUP = ReplyKeyboardMarkup(
-    [[KeyboardButton("🏠 Generate Pattern"), KeyboardButton("⏹ Stop"), KeyboardButton("❓ Help")]], 
+    [[KeyboardButton("🏠 Generate Pattern"), KeyboardButton("❓ Help")]], # Removed Stop button here
     resize_keyboard=True, 
     one_time_keyboard=False 
 )
@@ -430,34 +416,28 @@ async def _execute_generation(update: Update, context: ContextTypes.DEFAULT_TYPE
         'original_message_id': initial_message.message_id,
         'total_est_combinations': total_est_combinations_for_task
     }
-    context.user_data['current_generation_task'] = asyncio.create_task(send_generated_stream(**task_args))
+    # Removed task creation and storing in user_data
 
     try:
-        await context.user_data['current_generation_task'] 
-    except asyncio.CancelledError:
-        print(f"Generation task for chat {chat_id} was explicitly cancelled in _execute_generation.")
+        # Direct call to streaming function (no explicit task management for stop button)
+        await send_generated_stream(**task_args) 
     except Exception as e:
         print(f"Unhandled exception in _execute_generation for pattern '{pattern}': {e}", exc_info=True)
+        # Send generic error if not already handled by send_generated_stream
         await context.bot.send_message(chat_id=chat_id, text="An unexpected error occurred. Please try again.", reply_markup=REPLY_KEYBOARD_MARKUP)
     finally:
-        if 'current_generation_task' in context.user_data:
-            del context.user_data['current_generation_task']
+        # No task cleanup needed here as task management removed
+        pass # The final 'Bot ready' message and keyboard is handled by send_generated_stream's finally
 
     return ConversationHandler.END 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels the current conversation."""
-    task = context.user_data.get('current_generation_task')
-    if task:
-        task.cancel()
-        await update.message.reply_text("Generation stop requested. Please wait for current operation to cease.", reply_markup=REPLY_KEYBOARD_MARKUP)
-    else:
-        await update.message.reply_text("Operation cancelled (no active generation).", reply_markup=REPLY_KEYBOARD_MARKUP)
+    # Removed task cancellation logic
+    await update.message.reply_text("Operation cancelled.", reply_markup=REPLY_KEYBOARD_MARKUP)
     return ConversationHandler.END
 
-async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Stops an ongoing generation."""
-    return await cancel_conversation(update, context) 
+# Removed stop_command handler completely
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends a help message."""
@@ -517,11 +497,10 @@ def main():
         fallbacks=[
             CommandHandler("cancel", cancel_conversation), 
             MessageHandler(filters.Regex("^Cancel$"), cancel_conversation), 
-            CommandHandler("start", start_command), # Allow /start to reset conversation
-            CommandHandler("help", help_command), # Allow /help to reset conversation
-            CommandHandler("about", about_command), # Allow /about to reset conversation
-            CommandHandler("stop", stop_command), # Allow /stop to reset conversation
-            MessageHandler(filters.ALL, cancel_conversation) # Catch all other messages as implicit cancel/fallback
+            CommandHandler("start", start_command), 
+            CommandHandler("help", help_command), 
+            CommandHandler("about", about_command), 
+            MessageHandler(filters.ALL, cancel_conversation) 
         ],
         per_user=True 
     )
@@ -530,7 +509,7 @@ def main():
     application.add_handler(CommandHandler("start", start_command)) 
     application.add_handler(CommandHandler("help", help_command)) 
     application.add_handler(CommandHandler("about", about_command)) 
-    application.add_handler(CommandHandler("stop", stop_command)) 
+    # Removed: application.add_handler(CommandHandler("stop", stop_command))
     
     # Run the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
