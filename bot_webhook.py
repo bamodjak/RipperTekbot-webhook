@@ -26,6 +26,7 @@ PREVIEW_MESSAGE_LINES = 10
 # --- Conversation States ---
 GET_PATTERN = 1
 GET_PREFIX_CHOICE = 2
+# (No new state for deduplication, as it's an optional argument for now)
 
 # --- Helper Functions ---
 def parse_pattern(pattern: str) -> List[Dict[str, str]]:
@@ -81,7 +82,16 @@ def format_bytes(bytes_num):
     i = math.floor(math.log(bytes_num) / math.log(k))
     return f"{bytes_num / (k ** i):.2f} {sizes[i]}"
 
-def generate_combinations(pattern: str, output_file_path: str, prefix_type: str = 'none'):
+def generate_combinations(
+    pattern: str, 
+    output_file_path: str, 
+    prefix_type: str = 'none',
+    deduplicate_case_insensitive: bool = False # New parameter for deduplication
+):
+    """
+    Generates combinations based on the pattern and saves them to the specified file.
+    Includes optional case-insensitive deduplication.
+    """
     segments, total_combinations, _ = estimate_pattern_characteristics(pattern)
     output_path = Path(output_file_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -95,21 +105,33 @@ def generate_combinations(pattern: str, output_file_path: str, prefix_type: str 
             else: var_sets.append(list(VALID_CHARS))
 
     indices = [0] * len(var_sets)
-    generated_count = 0
+    generated_count = 0 # This will be the count of actual lines written
+    
+    seen_words_lower = set() if deduplicate_case_insensitive else None # Initialize set only if needed
 
     with open(output_file_path, 'w', encoding='utf-8') as f:
-        for i in range(total_combinations):
+        for i in range(total_combinations): # Loop through all theoretical combinations
             prefix = _get_prefix_char(i, total_combinations, prefix_type)
             base_word_chars = [var_sets[j][idx] for j, idx in enumerate(indices)]
             word = prefix + "".join(base_word_chars)
-            f.write(word + '\n')
-            generated_count += 1
+
+            if deduplicate_case_insensitive:
+                current_word_lower = word.lower()
+                if current_word_lower not in seen_words_lower: # Check for uniqueness
+                    seen_words_lower.add(current_word_lower)
+                    f.write(word + '\n')
+                    generated_count += 1 # Only count unique words
+            else:
+                f.write(word + '\n')
+                generated_count += 1 # Count all words
+
+            # Update indices for the next combination (always update, regardless of duplication)
             for j in range(len(var_sets) - 1, -1, -1):
                 if indices[j] + 1 < len(var_sets[j]): indices[j] += 1; break
                 else: indices[j] = 0
     return generated_count
 
-# --- New File Splitting and Sending Function ---
+# --- File Splitting and Sending Function ---
 async def split_and_send_file(
     file_path: str,
     chat_id: int,
@@ -214,7 +236,7 @@ async def split_and_send_file(
 
 # Define the custom Reply Keyboard (always on display)
 REPLY_KEYBOARD_MARKUP = ReplyKeyboardMarkup(
-    [[KeyboardButton("🏠 Generate Pattern"), KeyboardButton("❓ Help")]], # Added Help button
+    [[KeyboardButton("🏠 Generate Pattern"), KeyboardButton("❓ Help")]], 
     resize_keyboard=True, 
     one_time_keyboard=False 
 )
@@ -236,7 +258,7 @@ async def generate_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return GET_PATTERN 
 
 async def get_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Receives the pattern from the user and asks for prefix choice."""
+    """Receives the pattern from the user and asks for prefix choice and deduplication."""
     pattern_text = update.message.text
     if pattern_text.lower() == 'cancel':
         await update.message.reply_text("Generation cancelled.", reply_markup=REPLY_KEYBOARD_MARKUP)
@@ -244,35 +266,87 @@ async def get_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     context.user_data['pattern'] = pattern_text 
 
-    # Create inline keyboard for prefix choice
+    # Create inline keyboard for prefix choice AND deduplication option
     keyboard = [
         [InlineKeyboardButton("Line Number (1-N)", callback_data='prefix_lineNumber')],
         [InlineKeyboardButton("Space", callback_data='prefix_space')],
-        [InlineKeyboardButton("None (No Prefix)", callback_data='prefix_none')]
+        [InlineKeyboardButton("None (No Prefix)", callback_data='prefix_none')],
+        [InlineKeyboardButton("Enable Deduplication", callback_data='dedupe_true')], # New button for dedupe
+        [InlineKeyboardButton("Disable Deduplication", callback_data='dedupe_false')], # New button for dedupe
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        "Now, choose a prefix type:",
+        "Choose a prefix type and/or deduplication option:",
         reply_markup=reply_markup
     )
+    # Store initial dedupe state as false for this pattern unless selected
+    context.user_data['deduplicate_case_insensitive'] = False 
     return GET_PREFIX_CHOICE 
 
 async def handle_prefix_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handles the prefix choice from the inline keyboard and triggers generation."""
+    """Handles the prefix choice or deduplication toggle from the inline keyboard."""
     query = update.callback_query
     await query.answer() 
     
-    prefix_type_from_callback = query.data.replace('prefix_', '') 
+    callback_data = query.data
     pattern = context.user_data.get('pattern')
 
+    # Handle prefix choice
+    if callback_data.startswith('prefix_'):
+        prefix_type_from_callback = callback_data.replace('prefix_', '')
+        context.user_data['prefix_type'] = prefix_type_from_callback
+        await query.edit_message_text(f"Pattern: `{pattern}`\nPrefix type set to: `{prefix_type_from_callback}`\nChoose deduplication option or Generate:", parse_mode='Markdown', reply_markup=None)
+    
+    # Handle deduplication choice
+    elif callback_data.startswith('dedupe_'):
+        dedupe_status = callback_data.replace('dedupe_', '') == 'true'
+        context.user_data['deduplicate_case_insensitive'] = dedupe_status
+        dedupe_text = "Enabled" if dedupe_status else "Disabled"
+        await query.edit_message_text(f"Pattern: `{pattern}`\nDeduplication set to: `{dedupe_text}`\nChoose prefix type or Generate:", parse_mode='Markdown', reply_markup=None)
+    
+    # Recreate the keyboard for next selection (or final generate)
+    current_prefix_type = context.user_data.get('prefix_type', 'none')
+    current_dedupe_status = context.user_data.get('deduplicate_case_insensitive', False)
+    
+    keyboard = [
+        [InlineKeyboardButton("Line Number (1-N)", callback_data='prefix_lineNumber')],
+        [InlineKeyboardButton("Space", callback_data='prefix_space')],
+        [InlineKeyboardButton("None (No Prefix)", callback_data='prefix_none')],
+        [InlineKeyboardButton("Enable Deduplication", callback_data='dedupe_true')],
+        [InlineKeyboardButton("Disable Deduplication", callback_data='dedupe_false')],
+        [InlineKeyboardButton("Generate Pattern Now!", callback_data='generate_final')] # New button to trigger final generation
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.message.reply_text(
+        f"Current Settings: Prefix=`{current_prefix_type}`, Dedupe=`{'Enabled' if current_dedupe_status else 'Disabled'}`\nWhat's next?",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+    
+    # If the final generate button is clicked, trigger the generation process
+    if callback_data == 'generate_final':
+        return await _execute_generation(update, context)
+        
+    return GET_PREFIX_CHOICE # Stay in this state to allow multiple choices
+
+async def _execute_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Internal function to execute the generation process after all options are chosen."""
+    query = update.callback_query # This will be the generate_final query
+    chat_id = query.message.chat_id
+    pattern = context.user_data.get('pattern')
+    prefix_type_from_callback = context.user_data.get('prefix_type', 'none')
+    deduplicate_status = context.user_data.get('deduplicate_case_insensitive', False)
+
     if not pattern:
-        await query.edit_message_text("Error: Pattern not found. Please start over with /generate.", reply_markup=None)
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=query.message.message_id, text="Error: Pattern not found. Please start over with /generate.", reply_markup=None)
         return ConversationHandler.END
 
     # Initial message to display generation status, will be edited
-    # Ensure this message is sent from query.message.chat_id
-    initial_message = await query.edit_message_text(
+    initial_message = await context.bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=query.message.message_id,
         text="Starting generation...", 
         reply_markup=None # Remove inline keyboard from previous message
     )
@@ -281,15 +355,17 @@ async def handle_prefix_choice(update: Update, context: ContextTypes.DEFAULT_TYP
         segments, total_est_combinations, _ = estimate_pattern_characteristics(pattern)
         
         if total_est_combinations == 0:
-            await query.edit_message_text("Error: Pattern yields 0 combinations. Please check your pattern.", reply_markup=None)
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=initial_message.message_id, text="Error: Pattern yields 0 combinations. Please check your pattern.", reply_markup=None)
             return ConversationHandler.END
         
         # Provide immediate feedback to the user via message edit
         response_text = f"Generating ~{total_est_combinations:,} combinations"
         if prefix_type_from_callback != 'none':
             response_text += f" with prefix type '{prefix_type_from_callback}'"
+        if deduplicate_status:
+            response_text += " with deduplication enabled"
         response_text += ". This might take a while for large patterns..."
-        await query.edit_message_text(response_text, reply_markup=None) # Edit the status message
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=initial_message.message_id, text=response_text, reply_markup=None)
         
         # Define output file path on the server (actual name on disk)
         sanitized_pattern_name = sanitize_filename(pattern)
@@ -297,7 +373,7 @@ async def handle_prefix_choice(update: Update, context: ContextTypes.DEFAULT_TYP
         output_file_path = os.path.join(GENERATED_FILES_DIR, raw_output_file_name)
 
         # Generate combinations and write directly to file
-        generated_count = generate_combinations(pattern, output_file_path, prefix_type_from_callback)
+        generated_count = generate_combinations(pattern, output_file_path, prefix_type_from_callback, deduplicate_case_insensitive=deduplicate_status)
         actual_file_size = os.path.getsize(output_file_path)
 
         # --- Live Preview (First few lines) ---
@@ -315,66 +391,63 @@ async def handle_prefix_choice(update: Update, context: ContextTypes.DEFAULT_TYP
                     preview_text += "...\n(Full file sending)"
                 
                 await context.bot.edit_message_text(
-                    chat_id=query.message.chat_id,
-                    message_id=initial_message.message_id, # Edit the initial status message
+                    chat_id=chat_id,
+                    message_id=initial_message.message_id, 
                     text=f"Generated preview:\n```\n{preview_text}```", 
                     parse_mode='Markdown'
                 )
             except Exception as preview_e:
                 print(f"Error generating preview: {preview_e}")
-                # Log error but continue to send file, don't block
                 await context.bot.edit_message_text(
-                    chat_id=query.message.chat_id,
+                    chat_id=chat_id,
                     message_id=initial_message.message_id,
                     text="Generated file, but preview failed. Sending file directly...",
                     reply_markup=None
                 )
         else:
             await context.bot.edit_message_text(
-                chat_id=query.message.chat_id,
+                chat_id=chat_id,
                 message_id=initial_message.message_id,
                 text="Generated an empty file. Please check your pattern.",
                 reply_markup=None
             )
-            # Remove empty file and end conversation
             if os.path.exists(output_file_path): os.remove(output_file_path)
-            await query.message.reply_text("Generated an empty file. Please try again.", reply_markup=REPLY_KEYBOARD_MARKUP)
+            await context.bot.send_message(chat_id=chat_id, text="Generated an empty file. Please try again.", reply_markup=REPLY_KEYBOARD_MARKUP)
             return ConversationHandler.END 
 
         # --- Send Actual File(s) ---
         if actual_file_size > SAFE_CHUNK_SIZE_BYTES:
             await split_and_send_file(
                 file_path=output_file_path,
-                chat_id=query.message.chat_id, 
+                chat_id=chat_id, 
                 bot=context.bot,
                 original_message_id=initial_message.message_id 
             )
-            # split_and_send_file handles cleanup of output_file_path
         else:
-            # Send the single file back to the user
-            formatted_output_file_name = f"{sanitized_pattern_name}_{total_est_combinations:,}.txt" # Formatted for display
+            formatted_output_file_name = f"{sanitized_pattern_name}_{generated_count:,}.txt" 
             with open(output_file_path, 'rb') as f: 
                 await context.bot.send_document(
-                    chat_id=query.message.chat_id, 
+                    chat_id=chat_id, 
                     document=f, 
                     filename=formatted_output_file_name, 
                     caption=f"✅ Generated {generated_count:,} combinations for pattern '{pattern}'."
                 )
-            os.remove(output_file_path) # Clean up single file
+            os.remove(output_file_path) 
             print(f"Cleaned up file: {output_file_path}")
-            await initial_message.edit_text("Generation complete!", reply_markup=None) # Edit status message to final confirmation
-            await query.message.reply_text("You can generate more patterns or use /start!", reply_markup=REPLY_KEYBOARD_MARKUP) # Show main keyboard
+            await initial_message.edit_text("Generation complete!", reply_markup=None)
+            await context.bot.send_message(chat_id=chat_id, text="You can generate more patterns or use /start!", reply_markup=REPLY_KEYBOARD_MARKUP)
 
     except ValueError as ve:
-        await query.edit_message_text(f"Pattern error: {ve}", reply_markup=None)
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=initial_message.message_id, text=f"Pattern error: {ve}", reply_markup=None)
         print(f"Pattern error for '{pattern}': {ve}")
-        await query.message.reply_text("Generation failed. Please try again with /generate.", reply_markup=REPLY_KEYBOARD_MARKUP)
+        await context.bot.send_message(chat_id=chat_id, text="Generation failed. Please try again with /generate.", reply_markup=REPLY_KEYBOARD_MARKUP)
     except Exception as e:
-        await query.edit_message_text(f"An unexpected error occurred during generation: {e}", reply_markup=None)
-        print(f"Unexpected error for pattern '{pattern}': {e}") # Corrected print statement
-        await query.message.reply_text("Generation failed. Please try again with /generate.", reply_markup=REPLY_KEYBOARD_MARKUP)
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=initial_message.message_id, text=f"An unexpected error occurred during generation: {e}", reply_markup=None)
+        print(f"Unexpected error for pattern '{pattern}': {e}", exc_info=True)
+        await context.bot.send_message(chat_id=chat_id, text="Generation failed. Please try again with /generate.", reply_markup=REPLY_KEYBOARD_MARKUP)
     
     return ConversationHandler.END 
+
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels the current conversation."""
@@ -390,10 +463,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "1. Send your pattern (e.g., `Xx\"abc\"X`).\n"
         "   - `X` or `x`: Generates a random letter (A-Z, a-z).\n"
         "   - `\"text\"`: Generates the exact text enclosed in quotes.\n\n"
-        "2. Choose a prefix type:\n"
+        "2. Choose options via buttons:\n"
         "   - `Line Number (1-N)`: Adds sequential numbers (1-, 2-, etc.) to each line.\n"
         "   - `Space`: Adds a space to the beginning of each line.\n"
-        "   - `None (No Prefix)`: Generates lines without any prefix.\n\n"
+        "   - `None (No Prefix)`: Generates lines without any prefix.\n"
+        "   - `Enable/Disable Deduplication`: Removes duplicate words (case-insensitive).\n\n"
         "File Size Limit:\n"
         "  - Telegram limits files to 50 MB. Larger files will be automatically split into multiple parts."
     )
@@ -435,16 +509,19 @@ def main():
         fallbacks=[
             CommandHandler("cancel", cancel_conversation), 
             MessageHandler(filters.Regex("^Cancel$"), cancel_conversation), 
-            CommandHandler("start", start_command), # Allow /start to reset
-            MessageHandler(filters.Regex("^❓ Help$"), help_command) # Handle help button as fallback
+            CommandHandler("start", start_command), 
+            CommandHandler("help", help_command), # Handle /help as fallback
+            CommandHandler("about", about_command), # Handle /about as fallback
+            # Add a message handler to catch unexpected input and re-prompt or cancel
+            MessageHandler(filters.ALL, cancel_conversation) # Catches all other messages as implicit cancel
         ],
         per_user=True 
     )
 
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("start", start_command)) 
-    application.add_handler(CommandHandler("help", help_command)) # Add explicit help command handler
-    application.add_handler(CommandHandler("about", about_command)) # Add about command handler
+    application.add_handler(CommandHandler("help", help_command)) 
+    application.add_handler(CommandHandler("about", about_command)) 
     
     # Run the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
