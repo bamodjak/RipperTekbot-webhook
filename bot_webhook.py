@@ -316,6 +316,14 @@ async def get_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if pattern_text.lower() == 'cancel':
         await update.message.reply_text("Generation cancelled.", reply_markup=REPLY_KEYBOARD_MARKUP)
         return ConversationHandler.END
+    
+    # NEW FIX: If the user sends the button text as pattern, ignore and re-prompt
+    if pattern_text == "🏠 Generate Pattern" or pattern_text == "🏠Generate Pattern": # Account for potential no-space formatting
+        await update.message.reply_text(
+            "I received the 'Generate Pattern' button tap. Please *type and send* your actual pattern now (e.g., `Xx\"6\"x\"t\"xx`):",
+            reply_markup=ReplyKeyboardMarkup([['Cancel']], resize_keyboard=True, one_time_keyboard=True)
+        )
+        return GET_PATTERN # Stay in GET_PATTERN state, don't store pattern
 
     context.user_data['pattern'] = pattern_text 
 
@@ -425,29 +433,23 @@ async def _execute_generation(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data['current_generation_task'] = asyncio.create_task(send_generated_stream(**task_args))
 
     try:
-        await context.user_data['current_generation_task'] # Wait for the streaming task to complete or be cancelled
+        await context.user_data['current_generation_task'] 
     except asyncio.CancelledError:
         print(f"Generation task for chat {chat_id} was explicitly cancelled in _execute_generation.")
-        # Message already handled by send_generated_stream's except asyncio.CancelledError
     except Exception as e:
         print(f"Unhandled exception in _execute_generation for pattern '{pattern}': {e}", exc_info=True)
-        # Send generic error if not already handled by send_generated_stream
         await context.bot.send_message(chat_id=chat_id, text="An unexpected error occurred. Please try again.", reply_markup=REPLY_KEYBOARD_MARKUP)
     finally:
-        # Clean up task reference
         if 'current_generation_task' in context.user_data:
             del context.user_data['current_generation_task']
-        # The final 'Bot ready' message and keyboard is handled by send_generated_stream's finally
 
     return ConversationHandler.END 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels the current conversation."""
-    # If there's an ongoing generation task, cancel it
     task = context.user_data.get('current_generation_task')
     if task:
         task.cancel()
-        # send_generated_stream's CancelledError handler will send the 'stopped' message and clean up.
         await update.message.reply_text("Generation stop requested. Please wait for current operation to cease.", reply_markup=REPLY_KEYBOARD_MARKUP)
     else:
         await update.message.reply_text("Operation cancelled (no active generation).", reply_markup=REPLY_KEYBOARD_MARKUP)
@@ -455,7 +457,7 @@ async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Stops an ongoing generation."""
-    return await cancel_conversation(update, context) # Reuse cancel_conversation for /stop
+    return await cancel_conversation(update, context) 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends a help message."""
@@ -515,10 +517,11 @@ def main():
         fallbacks=[
             CommandHandler("cancel", cancel_conversation), 
             MessageHandler(filters.Regex("^Cancel$"), cancel_conversation), 
-            CommandHandler("start", start_command), 
-            CommandHandler("help", help_command), 
-            CommandHandler("about", about_command), 
-            MessageHandler(filters.ALL, cancel_conversation) 
+            CommandHandler("start", start_command), # Allow /start to reset conversation
+            CommandHandler("help", help_command), # Allow /help to reset conversation
+            CommandHandler("about", about_command), # Allow /about to reset conversation
+            CommandHandler("stop", stop_command), # Allow /stop to reset conversation
+            MessageHandler(filters.ALL, cancel_conversation) # Catch all other messages as implicit cancel/fallback
         ],
         per_user=True 
     )
