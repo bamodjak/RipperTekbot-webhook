@@ -3,13 +3,14 @@ import math
 import io 
 from pathlib import Path
 from typing import List, Dict, Any, Generator
+import asyncio 
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, 
     ContextTypes, filters, ConversationHandler
 )
-from telegram.error import BadRequest # New import for BadRequest error
+from telegram.error import BadRequest 
 
 # --- Constants ---
 LETTERS = 'abcdefghijklmnopqrstuvwxyz'
@@ -19,7 +20,6 @@ FIRST_CHAR_SET = LETTERS + LETTERS.upper()
 
 # Telegram file size limits for documents
 TELEGRAM_FILE_LIMIT_MB = 50
-# Safe chunk size (e.g., 95% of 50 MB to account for overhead)
 SAFE_CHUNK_SIZE_BYTES = int(TELEGRAM_FILE_LIMIT_MB * 0.95 * 1024 * 1024) 
 
 # Number of lines to send as text preview before sending the actual file(s)
@@ -377,11 +377,17 @@ async def handle_prefix_choice(update: Update, context: ContextTypes.DEFAULT_TYP
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     # Edit the current message with updated settings and keyboard
-    await query.edit_message_text(
-        f"Pattern: `{pattern}`\nCurrent Settings: Prefix=`{current_prefix_type}`, Dedupe=`{'Enabled' if current_dedupe_status else 'Disabled'}`\nSelect again or Generate:",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
+    try:
+        await query.edit_message_text(
+            f"Pattern: `{pattern}`\nCurrent Settings: Prefix=`{current_prefix_type}`, Dedupe=`{'Enabled' if current_dedupe_status else 'Disabled'}`\nSelect again or Generate:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            print(f"DEBUG: Message not modified, skipping edit: {e}")
+        else:
+            raise # Re-raise other BadRequest errors
         
     return GET_PREFIX_CHOICE 
 
@@ -422,7 +428,7 @@ async def _execute_generation(update: Update, context: ContextTypes.DEFAULT_TYPE
         await context.user_data['current_generation_task'] # Wait for the streaming task to complete or be cancelled
     except asyncio.CancelledError:
         print(f"Generation task for chat {chat_id} was explicitly cancelled in _execute_generation.")
-        # send_generated_stream's CancelledError handler already sent the stop message and cleaned up.
+        # Message already handled by send_generated_stream's except asyncio.CancelledError
     except Exception as e:
         print(f"Unhandled exception in _execute_generation for pattern '{pattern}': {e}", exc_info=True)
         # Send generic error if not already handled by send_generated_stream
@@ -521,7 +527,7 @@ def main():
     application.add_handler(CommandHandler("start", start_command)) 
     application.add_handler(CommandHandler("help", help_command)) 
     application.add_handler(CommandHandler("about", about_command)) 
-    application.add_handler(CommandHandler("stop", stop_command)) # Add the /stop command handler
+    application.add_handler(CommandHandler("stop", stop_command)) 
     
     # Run the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
