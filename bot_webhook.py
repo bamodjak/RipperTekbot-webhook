@@ -1,6 +1,6 @@
 import os
 import math
-import io 
+import io # For BytesIO if needed for smaller in-memory chunks
 from pathlib import Path
 from typing import List, Dict, Any, Generator
 
@@ -9,7 +9,6 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, 
     ContextTypes, filters, ConversationHandler
 )
-from telegram.error import BadRequest 
 
 # --- Constants ---
 LETTERS = 'abcdefghijklmnopqrstuvwxyz'
@@ -19,6 +18,7 @@ FIRST_CHAR_SET = LETTERS + LETTERS.upper()
 
 # Telegram file size limits for documents
 TELEGRAM_FILE_LIMIT_MB = 50
+# Safe chunk size (e.g., 95% of 50 MB to account for overhead)
 SAFE_CHUNK_SIZE_BYTES = int(TELEGRAM_FILE_LIMIT_MB * 0.95 * 1024 * 1024) 
 
 # Number of lines to send as text preview before sending the actual file(s)
@@ -125,7 +125,7 @@ def generate_combinations_line_iter(
             if indices[j] + 1 < len(var_sets[j]): indices[j] += 1; break
             else: indices[j] = 0
 
-# --- Async Function to Stream and Send File Parts ---
+# --- New Async Function to Stream and Send File Parts ---
 async def send_generated_stream(
     pattern: str, 
     prefix_type: str, 
@@ -133,9 +133,9 @@ async def send_generated_stream(
     chat_id: int, 
     bot: Application.bot, 
     original_message_id: int,
-    total_est_combinations: int 
+    total_est_combinations: int # For initial estimate and final filename
 ):
-    temp_files_created = [] 
+    temp_files_created = [] # To clean up temporary chunk files
     part_num = 1
     total_bytes_sent = 0
     actual_generated_lines_count = 0 
@@ -147,24 +147,25 @@ async def send_generated_stream(
     )
 
     try:
+        # Get the line iterator (generator)
         line_iterator = generate_combinations_line_iter(pattern, prefix_type, deduplicate_case_insensitive)
         
         current_chunk_lines_buffer = []
         current_chunk_size_bytes = 0
         
-        preview_lines_list = [] 
+        preview_lines_list = [] # To accumulate lines for the initial text preview
         preview_sent = False
 
-        for line in line_iterator: 
+        for line in line_iterator: # Consume line by line from the generator
             actual_generated_lines_count += 1
             line_bytes = line.encode('utf-8')
 
             # --- Handle Live Preview ---
             if not preview_sent and len(preview_lines_list) < PREVIEW_MESSAGE_LINES:
                 preview_lines_list.append(line)
-                if len(preview_lines_list) == PREVIEW_MESSAGE_LINES: 
+                if len(preview_lines_list) == PREVIEW_MESSAGE_LINES: # Send initial preview message once ready
                     preview_text_content = "".join(preview_lines_list)
-                    if actual_generated_lines_count < total_est_combinations: 
+                    if actual_generated_lines_count < total_est_combinations: # Check if there's more after preview
                         preview_text_content += "...\n(Full file sending in parts)"
                     
                     await bot.edit_message_text(
@@ -173,44 +174,48 @@ async def send_generated_stream(
                         text=f"Generated preview:\n```\n{preview_text_content}```",
                         parse_mode='Markdown'
                     )
-                    preview_sent = True 
+                    preview_sent = True # Mark preview as sent
             
             current_chunk_lines_buffer.append(line)
             current_chunk_size_bytes += len(line_bytes)
 
             # --- Check for Chunk Completion and Send ---
             if current_chunk_size_bytes >= SAFE_CHUNK_SIZE_BYTES:
+                # Write current buffer to a temp file
                 temp_chunk_path = os.path.join(GENERATED_FILES_DIR, f"chunk_{os.urandom(4).hex()}.txt")
                 temp_files_created.append(temp_chunk_path)
                 with open(temp_chunk_path, 'w', encoding='utf-8') as f_chunk:
                     f_chunk.write("".join(current_chunk_lines_buffer))
                 
-                total_bytes_sent += current_chunk_size_bytes
-                
+                total_bytes_sent += current_chunk_size_bytes # Add this chunk's size to total
+
+                # Update status message before sending part
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=original_message_id,
                     text=f"Sending part {part_num} (Total sent: {format_bytes(total_bytes_sent)})..."
                 )
                 
+                # Send the chunk file
                 with open(temp_chunk_path, 'rb') as f_send:
                     await bot.send_document(
                         chat_id=chat_id,
                         document=f_send, 
-                        filename=f"{sanitize_filename(pattern)}_{actual_generated_lines_count:,}_part_{part_num}.txt", 
+                        filename=f"{sanitize_filename(pattern)}_{actual_generated_lines_count:,}_part_{part_num}.txt", # Filename includes lines generated so far
                         caption=f"Part {part_num} (Generated: {actual_generated_lines_count:,} lines)"
                     )
                 
-                os.remove(temp_chunk_path) 
-                temp_files_created.pop() 
+                os.remove(temp_chunk_path) # Clean up after sending
+                temp_files_created.pop() # Remove from list after cleanup
                 
+                # Reset for next chunk
                 current_chunk_lines_buffer = []
                 current_chunk_size_bytes = 0
                 part_num += 1
 
         # --- Send Any Remaining Data in the Last Chunk ---
         if current_chunk_lines_buffer:
-            temp_chunk_path = os.path.join(GENERATED_FILES_DIR, f"chunk_final_{os.urandom(4).hex()}.txt") 
+            temp_chunk_path = os.path.join(GENERATED_FILES_DIR, f"chunk_final_{os.urandom(4).hex()}.txt") # Unique name for final chunk
             temp_files_created.append(temp_chunk_path)
             with open(temp_chunk_path, 'w', encoding='utf-8') as f_chunk:
                 f_chunk.write("".join(current_chunk_lines_buffer))
@@ -227,7 +232,7 @@ async def send_generated_stream(
                 await bot.send_document(
                     chat_id=chat_id,
                     document=f_send, 
-                    filename=f"{sanitize_filename(pattern)}_{actual_generated_lines_count:,}_final_part_{part_num}.txt", 
+                    filename=f"{sanitize_filename(pattern)}_{actual_generated_lines_count:,}_final_part_{part_num}.txt", # Filename for final part
                     caption=f"Part {part_num} (Generated: {actual_generated_lines_count:,} lines)"
                 )
             part_num += 1
@@ -245,29 +250,18 @@ async def send_generated_stream(
             text=final_message_text
         )
 
-    except Exception as e: # Catch any other exceptions during generation/sending
+    except Exception as e:
         print(f"Error during streamed generation/sending: {e}", exc_info=True)
-        # Check if the message can still be edited, if not, send a new one
-        try:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=original_message_id,
-                text=f"❌ An error occurred during generation/delivery: {e}",
-                reply_markup=None # Ensure no inline keyboard remains
-            )
-        except Exception:
-            await bot.send_message( # Send new message if edit fails
-                chat_id=chat_id,
-                text=f"❌ An error occurred during generation/delivery: {e}",
-                reply_markup=None
-            )
+        await bot.send_message( # Send new message as original might be gone/edited
+            chat_id=chat_id,
+            text=f"An error occurred during streamed generation/delivery: {e}"
+        )
     finally:
-        # Ensure all temporary files are cleaned up in case of error or cancellation
+        # Ensure all temporary files are cleaned up in case of error
         for temp_file in temp_files_created:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
                 print(f"Cleaned up temporary chunk file in finally: {temp_file}")
-        # Send a final 'bot ready' message and show main keyboard
         await bot.send_message(chat_id=chat_id, text="Bot is ready for your next command!", reply_markup=REPLY_KEYBOARD_MARKUP)
 
 
@@ -275,7 +269,7 @@ async def send_generated_stream(
 
 # Define the custom Reply Keyboard (always on display)
 REPLY_KEYBOARD_MARKUP = ReplyKeyboardMarkup(
-    [[KeyboardButton("🏠 Generate Pattern"), KeyboardButton("❓ Help")]], # Removed Stop button here
+    [[KeyboardButton("🏠 Generate Pattern"), KeyboardButton("❓ Help")]], 
     resize_keyboard=True, 
     one_time_keyboard=False 
 )
@@ -302,14 +296,6 @@ async def get_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if pattern_text.lower() == 'cancel':
         await update.message.reply_text("Generation cancelled.", reply_markup=REPLY_KEYBOARD_MARKUP)
         return ConversationHandler.END
-    
-    # NEW FIX: If the user sends the button text as pattern, ignore and re-prompt
-    if pattern_text == "🏠 Generate Pattern" or pattern_text == "🏠Generate Pattern": # Account for potential no-space formatting
-        await update.message.reply_text(
-            "I received the 'Generate Pattern' button tap. Please *type and send* your actual pattern now (e.g., `Xx\"6\"x\"t\"xx`):",
-            reply_markup=ReplyKeyboardMarkup([['Cancel']], resize_keyboard=True, one_time_keyboard=True)
-        )
-        return GET_PATTERN # Stay in GET_PATTERN state, don't store pattern
 
     context.user_data['pattern'] = pattern_text 
 
@@ -318,8 +304,8 @@ async def get_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         [InlineKeyboardButton("Line Number (1-N)", callback_data='prefix_lineNumber')],
         [InlineKeyboardButton("Space", callback_data='prefix_space')],
         [InlineKeyboardButton("None (No Prefix)", callback_data='prefix_none')],
-        [InlineKeyboardButton("Enable Deduplication", callback_data='dedupe_true')], 
-        [InlineKeyboardButton("Disable Deduplication", callback_data='dedupe_false')], 
+        [InlineKeyboardButton("Enable Deduplication", callback_data='dedupe_true')], # New button for dedupe
+        [InlineKeyboardButton("Disable Deduplication", callback_data='dedupe_false')], # New button for dedupe
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -327,9 +313,8 @@ async def get_pattern(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         "Choose a prefix type and/or deduplication option:",
         reply_markup=reply_markup
     )
-    # Store initial dedupe state as false for this pattern unless explicitly enabled
+    # Store initial dedupe state as false for this pattern unless selected
     context.user_data['deduplicate_case_insensitive'] = False 
-    context.user_data['prefix_type'] = 'none' # Store initial prefix type as default 'none'
     return GET_PREFIX_CHOICE 
 
 async def handle_prefix_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -348,46 +333,43 @@ async def handle_prefix_choice(update: Update, context: ContextTypes.DEFAULT_TYP
     if callback_data.startswith('prefix_'):
         prefix_type_from_callback = callback_data.replace('prefix_', '')
         context.user_data['prefix_type'] = prefix_type_from_callback
-        
+        # await query.edit_message_text(f"Pattern: `{pattern}`\nPrefix type set to: `{prefix_type_from_callback}`\nChoose deduplication option or Generate:", parse_mode='Markdown', reply_markup=None)
+    
     # Handle deduplication choice
     elif callback_data.startswith('dedupe_'):
         dedupe_status = callback_data.replace('dedupe_', '') == 'true'
         context.user_data['deduplicate_case_insensitive'] = dedupe_status
-        
-    # Recreate the keyboard with updated selections for next choice or final generate
+        # dedupe_text = "Enabled" if dedupe_status else "Disabled"
+        # await query.edit_message_text(f"Pattern: `{pattern}`\nDeduplication set to: `{dedupe_text}`\nChoose prefix type or Generate:", parse_mode='Markdown', reply_markup=None)
+    
+    # Recreate the keyboard for next selection (or final generate)
     current_prefix_type = context.user_data.get('prefix_type', 'none')
     current_dedupe_status = context.user_data.get('deduplicate_case_insensitive', False)
     
     keyboard = [
-        [InlineKeyboardButton(f"Prefix: {'Line Number' if current_prefix_type == 'lineNumber' else ('Space' if current_prefix_type == 'space' else 'None')}", callback_data='dummy')], 
+        [InlineKeyboardButton(f"Prefix: {'Line Number' if current_prefix_type == 'lineNumber' else ('Space' if current_prefix_type == 'space' else 'None')}", callback_data='dummy')], # Display current choice
         [InlineKeyboardButton("Line Number (1-N)", callback_data='prefix_lineNumber')],
         [InlineKeyboardButton("Space", callback_data='prefix_space')],
         [InlineKeyboardButton("None (No Prefix)", callback_data='prefix_none')],
-        [InlineKeyboardButton(f"Dedupe: {'Enabled' if current_dedupe_status else 'Disabled'}", callback_data='dummy')], 
+        [InlineKeyboardButton(f"Dedupe: {'Enabled' if current_dedupe_status else 'Disabled'}", callback_data='dummy')], # Display current choice
         [InlineKeyboardButton("Enable Deduplication", callback_data='dedupe_true')],
         [InlineKeyboardButton("Disable Deduplication", callback_data='dedupe_false')],
-        [InlineKeyboardButton("Generate Pattern Now!", callback_data='generate_final')] 
+        [InlineKeyboardButton("Generate Pattern Now!", callback_data='generate_final')] # New button to trigger final generation
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     # Edit the current message with updated settings and keyboard
-    try:
-        await query.edit_message_text(
-            f"Pattern: `{pattern}`\nCurrent Settings: Prefix=`{current_prefix_type}`, Dedupe=`{'Enabled' if current_dedupe_status else 'Disabled'}`\nSelect again or Generate:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    except BadRequest as e:
-        if "Message is not modified" in str(e):
-            print(f"DEBUG: Message not modified, skipping edit: {e}")
-        else:
-            raise # Re-raise other BadRequest errors
+    await query.edit_message_text(
+        f"Pattern: `{pattern}`\nCurrent Settings: Prefix=`{current_prefix_type}`, Dedupe=`{'Enabled' if current_dedupe_status else 'Disabled'}`\nSelect again or Generate:",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
         
-    return GET_PREFIX_CHOICE 
+    return GET_PREFIX_CHOICE # Stay in this state to allow multiple choices
 
 async def _execute_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Internal function to execute the generation process after all options are chosen."""
-    query = update.callback_query 
+    query = update.callback_query # This will be the generate_final query
     chat_id = query.message.chat_id
     pattern = context.user_data.get('pattern')
     prefix_type_from_callback = context.user_data.get('prefix_type', 'none')
@@ -402,42 +384,42 @@ async def _execute_generation(update: Update, context: ContextTypes.DEFAULT_TYPE
         chat_id=chat_id,
         message_id=query.message.message_id,
         text="Starting generation...", 
-        reply_markup=None 
+        reply_markup=None # Remove inline keyboard from previous message
     )
-    
-    # Store the generation task in user_data for potential cancellation
-    total_est_combinations_for_task = (estimate_pattern_characteristics(pattern))[1]
-    task_args = {
-        'pattern': pattern,
-        'prefix_type': prefix_type_from_callback,
-        'deduplicate_case_insensitive': deduplicate_status,
-        'chat_id': chat_id,
-        'bot': context.bot,
-        'original_message_id': initial_message.message_id,
-        'total_est_combinations': total_est_combinations_for_task
-    }
-    # Removed task creation and storing in user_data
 
     try:
-        # Direct call to streaming function (no explicit task management for stop button)
-        await send_generated_stream(**task_args) 
-    except Exception as e:
-        print(f"Unhandled exception in _execute_generation for pattern '{pattern}': {e}", exc_info=True)
-        # Send generic error if not already handled by send_generated_stream
-        await context.bot.send_message(chat_id=chat_id, text="An unexpected error occurred. Please try again.", reply_markup=REPLY_KEYBOARD_MARKUP)
-    finally:
-        # No task cleanup needed here as task management removed
-        pass # The final 'Bot ready' message and keyboard is handled by send_generated_stream's finally
+        segments, total_est_combinations, _ = estimate_pattern_characteristics(pattern)
+        
+        if total_est_combinations == 0:
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=initial_message.message_id, text="Error: Pattern yields 0 combinations. Please check your pattern.", reply_markup=None)
+            return ConversationHandler.END
+        
+        # Call the new streaming function
+        await send_generated_stream(
+            pattern=pattern,
+            prefix_type=prefix_type_from_callback,
+            deduplicate_case_insensitive=deduplicate_status,
+            chat_id=chat_id,
+            bot=context.bot,
+            original_message_id=initial_message.message_id,
+            total_est_combinations=total_est_combinations
+        )
 
+    except ValueError as ve:
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=initial_message.message_id, text=f"Pattern error: {ve}", reply_markup=None)
+        print(f"Pattern error for '{pattern}': {ve}")
+        await context.bot.send_message(chat_id=chat_id, text="Generation failed. Please try again with /generate.", reply_markup=REPLY_KEYBOARD_MARKUP)
+    except Exception as e:
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=initial_message.message_id, text=f"An unexpected error occurred during generation: {e}", reply_markup=None)
+        print(f"Unexpected error for pattern '{pattern}': {e}", exc_info=True)
+        await context.bot.send_message(chat_id=chat_id, text="Generation failed. Please try again with /generate.", reply_markup=REPLY_KEYBOARD_MARKUP)
+    
     return ConversationHandler.END 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels the current conversation."""
-    # Removed task cancellation logic
     await update.message.reply_text("Operation cancelled.", reply_markup=REPLY_KEYBOARD_MARKUP)
     return ConversationHandler.END
-
-# Removed stop_command handler completely
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends a help message."""
@@ -453,11 +435,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "   - `Space`: Adds a space to the beginning of each line.\n"
         "   - `None (No Prefix)`: Generates lines without any prefix.\n"
         "   - `Enable/Disable Deduplication`: Removes duplicate words (case-insensitive).\n\n"
-        "Live Progress:\n"
-        "  - For long generations, I'll send parts of the file as soon as they reach ~45MB.\n"
-        "  - You'll see a preview of the first few lines and progress updates.\n\n"
         "File Size Limit:\n"
-        "  - Telegram limits files to 50 MB. Larger files are automatically split."
+        "  - Telegram limits files to 50 MB. Larger files will be automatically split into multiple parts."
     )
     await update.message.reply_text(help_text, reply_markup=REPLY_KEYBOARD_MARKUP)
 
@@ -509,7 +488,6 @@ def main():
     application.add_handler(CommandHandler("start", start_command)) 
     application.add_handler(CommandHandler("help", help_command)) 
     application.add_handler(CommandHandler("about", about_command)) 
-    # Removed: application.add_handler(CommandHandler("stop", stop_command))
     
     # Run the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
