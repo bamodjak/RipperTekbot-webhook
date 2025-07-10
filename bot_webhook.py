@@ -1,7 +1,8 @@
 import os
 import math
+import io # For BytesIO if needed for smaller in-memory chunks
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Generator
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -26,7 +27,6 @@ PREVIEW_MESSAGE_LINES = 10
 # --- Conversation States ---
 GET_PATTERN = 1
 GET_PREFIX_CHOICE = 2
-# (No new state for deduplication, as it's an optional argument for now)
 
 # --- Helper Functions ---
 def parse_pattern(pattern: str) -> List[Dict[str, str]]:
@@ -82,154 +82,187 @@ def format_bytes(bytes_num):
     i = math.floor(math.log(bytes_num) / math.log(k))
     return f"{bytes_num / (k ** i):.2f} {sizes[i]}"
 
-def generate_combinations(
+# --- Modified generate_combinations to be a line generator ---
+def generate_combinations_line_iter(
     pattern: str, 
-    output_file_path: str, 
-    prefix_type: str = 'none',
-    deduplicate_case_insensitive: bool = False # New parameter for deduplication
-):
+    prefix_type: str = 'none', 
+    deduplicate_case_insensitive: bool = False
+) -> Generator[str, None, None]:
     """
-    Generates combinations based on the pattern and saves them to the specified file.
-    Includes optional case-insensitive deduplication.
+    Generates combinations as an iterator, yielding individual lines.
+    Does not write to disk.
     """
     segments, total_combinations, _ = estimate_pattern_characteristics(pattern)
-    output_path = Path(output_file_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
+    
+    seen_words_lower = set() if deduplicate_case_insensitive else None
+    
     var_sets = []
     first_variable_segment_found = False
     for seg in segments:
         if seg['type'] == 'const': var_sets.append([seg['value']])
         else:
-            if not first_variable_segment_found: var_sets.append(list(FIRST_CHAR_SET)); first_variable_segment_found = True
+            if not first_variable_segment_found: var_sets.append(list(FIRST_CHAR_SET)); first_variable_found = True
             else: var_sets.append(list(VALID_CHARS))
 
     indices = [0] * len(var_sets)
-    generated_count = 0 # This will be the count of actual lines written
     
-    seen_words_lower = set() if deduplicate_case_insensitive else None # Initialize set only if needed
+    for i in range(total_combinations):
+        prefix = _get_prefix_char(i, total_combinations, prefix_type)
+        base_word_chars = [var_sets[j][idx] for j, idx in enumerate(indices)]
+        word = prefix + "".join(base_word_chars)
+        line = word + '\n'
 
-    with open(output_file_path, 'w', encoding='utf-8') as f:
-        for i in range(total_combinations): # Loop through all theoretical combinations
-            prefix = _get_prefix_char(i, total_combinations, prefix_type)
-            base_word_chars = [var_sets[j][idx] for j, idx in enumerate(indices)]
-            word = prefix + "".join(base_word_chars)
+        if deduplicate_case_insensitive:
+            current_word_lower = word.lower()
+            if current_word_lower not in seen_words_lower:
+                seen_words_lower.add(current_word_lower)
+                yield line # Yield only if unique
+        else:
+            yield line # Yield all lines
 
-            if deduplicate_case_insensitive:
-                current_word_lower = word.lower()
-                if current_word_lower not in seen_words_lower: # Check for uniqueness
-                    seen_words_lower.add(current_word_lower)
-                    f.write(word + '\n')
-                    generated_count += 1 # Only count unique words
-            else:
-                f.write(word + '\n')
-                generated_count += 1 # Count all words
+        # Update indices for the next combination
+        for j in range(len(var_sets) - 1, -1, -1):
+            if indices[j] + 1 < len(var_sets[j]): indices[j] += 1; break
+            else: indices[j] = 0
 
-            # Update indices for the next combination (always update, regardless of duplication)
-            for j in range(len(var_sets) - 1, -1, -1):
-                if indices[j] + 1 < len(var_sets[j]): indices[j] += 1; break
-                else: indices[j] = 0
-    return generated_count
-
-# --- File Splitting and Sending Function ---
-async def split_and_send_file(
-    file_path: str,
-    chat_id: int,
+# --- New Async Function to Stream and Send File Parts ---
+async def send_generated_stream(
+    pattern: str, 
+    prefix_type: str, 
+    deduplicate_case_insensitive: bool,
+    chat_id: int, 
     bot: Application.bot, 
-    original_message_id: int 
+    original_message_id: int,
+    total_est_combinations: int # For initial estimate and final filename
 ):
-    file_size = os.path.getsize(file_path)
-    
+    temp_files_created = [] # To clean up temporary chunk files
+    part_num = 1
+    total_bytes_sent = 0
+    actual_generated_lines_count = 0 
+
     await bot.edit_message_text(
         chat_id=chat_id,
         message_id=original_message_id,
-        text=f"File is too large ({format_bytes(file_size)}), splitting and sending in parts..."
+        text=f"Generating and sending in real-time for ~{total_est_combinations:,} combinations. Please wait for parts..."
     )
 
-    part_num = 1
-    total_parts_estimate = math.ceil(file_size / SAFE_CHUNK_SIZE_BYTES) 
-    
-    temp_file_base = f"temp_chunk_{os.path.basename(file_path).replace('.txt', '')}_{os.urandom(4).hex()}"
-    temp_files_created = []
-
     try:
-        with open(file_path, 'r', encoding='utf-8') as infile:
-            current_chunk_lines = []
-            current_chunk_size_bytes = 0
+        # Get the line iterator (generator)
+        line_iterator = generate_combinations_line_iter(pattern, prefix_type, deduplicate_case_insensitive)
+        
+        current_chunk_lines_buffer = []
+        current_chunk_size_bytes = 0
+        
+        preview_lines_list = [] # To accumulate lines for the initial text preview
+        preview_sent = False
 
-            for line in infile:
-                line_bytes = line.encode('utf-8')
-                
-                if current_chunk_size_bytes + len(line_bytes) > SAFE_CHUNK_SIZE_BYTES and current_chunk_lines:
-                    temp_chunk_path = os.path.join(GENERATED_FILES_DIR, f"{temp_file_base}_part_{part_num}.txt")
-                    with open(temp_chunk_path, 'w', encoding='utf-8') as outfile:
-                        outfile.write("".join(current_chunk_lines))
-                    temp_files_created.append(temp_chunk_path)
+        for line in line_iterator: # Consume line by line from the generator
+            actual_generated_lines_count += 1
+            line_bytes = line.encode('utf-8')
 
+            # --- Handle Live Preview ---
+            if not preview_sent and len(preview_lines_list) < PREVIEW_MESSAGE_LINES:
+                preview_lines_list.append(line)
+                if len(preview_lines_list) == PREVIEW_MESSAGE_LINES: # Send initial preview message once ready
+                    preview_text_content = "".join(preview_lines_list)
+                    if actual_generated_lines_count < total_est_combinations: # Check if there's more after preview
+                        preview_text_content += "...\n(Full file sending in parts)"
+                    
                     await bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=original_message_id,
-                        text=f"Sending part {part_num} of (approx. {total_parts_estimate})..."
+                        text=f"Generated preview:\n```\n{preview_text_content}```",
+                        parse_mode='Markdown'
                     )
-                    
-                    with open(temp_chunk_path, 'rb') as f:
-                        await bot.send_document(
-                            chat_id=chat_id,
-                            document=f, 
-                            filename=f"{Path(file_path).stem}_part_{part_num}.txt",
-                            caption=f"Part {part_num} (Original: {Path(file_path).name})"
-                        )
-                    
-                    current_chunk_lines = [line]
-                    current_chunk_size_bytes = len(line_bytes)
-                    part_num += 1
-                else:
-                    current_chunk_lines.append(line)
-                    current_chunk_size_bytes += len(line_bytes)
+                    preview_sent = True # Mark preview as sent
             
-            if current_chunk_lines:
-                temp_chunk_path = os.path.join(GENERATED_FILES_DIR, f"{temp_file_base}_part_{part_num}.txt")
-                with open(temp_chunk_path, 'w', encoding='utf-8') as outfile:
-                    outfile.write("".join(current_chunk_lines))
+            current_chunk_lines_buffer.append(line)
+            current_chunk_size_bytes += len(line_bytes)
+
+            # --- Check for Chunk Completion and Send ---
+            if current_chunk_size_bytes >= SAFE_CHUNK_SIZE_BYTES:
+                # Write current buffer to a temp file
+                temp_chunk_path = os.path.join(GENERATED_FILES_DIR, f"chunk_{os.urandom(4).hex()}.txt")
                 temp_files_created.append(temp_chunk_path)
+                with open(temp_chunk_path, 'w', encoding='utf-8') as f_chunk:
+                    f_chunk.write("".join(current_chunk_lines_buffer))
                 
+                total_bytes_sent += current_chunk_size_bytes # Add this chunk's size to total
+
+                # Update status message before sending part
                 await bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=original_message_id,
-                    text=f"Sending final part {part_num} of (approx. {total_parts_estimate})..."
+                    text=f"Sending part {part_num} (Total sent: {format_bytes(total_bytes_sent)})..."
                 )
-                with open(temp_chunk_path, 'rb') as f:
+                
+                # Send the chunk file
+                with open(temp_chunk_path, 'rb') as f_send:
                     await bot.send_document(
                         chat_id=chat_id,
-                        document=f, 
-                        filename=f"{Path(file_path).stem}_part_{part_num}.txt",
-                        caption=f"Part {part_num} (Original: {Path(file_path).name})"
+                        document=f_send, 
+                        filename=f"{sanitize_filename(pattern)}_{actual_generated_lines_count:,}_part_{part_num}.txt", # Filename includes lines generated so far
+                        caption=f"Part {part_num} (Generated: {actual_generated_lines_count:,} lines)"
                     )
-                part_num += 1 
+                
+                os.remove(temp_chunk_path) # Clean up after sending
+                temp_files_created.pop() # Remove from list after cleanup
+                
+                # Reset for next chunk
+                current_chunk_lines_buffer = []
+                current_chunk_size_bytes = 0
+                part_num += 1
 
-        final_message = f"✅ Successfully sent {part_num - 1} parts of the file (original size: {format_bytes(file_size)})."
-        if part_num - 1 == 0: 
-            final_message = f"Generated file was empty or too small to split meaningfully. No parts sent."
+        # --- Send Any Remaining Data in the Last Chunk ---
+        if current_chunk_lines_buffer:
+            temp_chunk_path = os.path.join(GENERATED_FILES_DIR, f"chunk_final_{os.urandom(4).hex()}.txt") # Unique name for final chunk
+            temp_files_created.append(temp_chunk_path)
+            with open(temp_chunk_path, 'w', encoding='utf-8') as f_chunk:
+                f_chunk.write("".join(current_chunk_lines_buffer))
+            
+            total_bytes_sent += current_chunk_size_bytes
+
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=original_message_id,
+                text=f"Sending final part {part_num} (Total sent: {format_bytes(total_bytes_sent)})..."
+            )
+
+            with open(temp_chunk_path, 'rb') as f_send:
+                await bot.send_document(
+                    chat_id=chat_id,
+                    document=f_send, 
+                    filename=f"{sanitize_filename(pattern)}_{actual_generated_lines_count:,}_final_part_{part_num}.txt", # Filename for final part
+                    caption=f"Part {part_num} (Generated: {actual_generated_lines_count:,} lines)"
+                )
+            part_num += 1
+            os.remove(temp_chunk_path)
+            temp_files_created.pop()
+
+        # --- Final Status Message ---
+        final_message_text = f"✅ Generation and delivery complete! Total parts sent: {part_num - 1}. Total generated unique lines: {actual_generated_lines_count:,}. Final size: {format_bytes(total_bytes_sent)}."
+        if actual_generated_lines_count == 0:
+            final_message_text = "Generated file was empty. Please check your pattern or deduplication settings."
 
         await bot.edit_message_text(
             chat_id=chat_id,
             message_id=original_message_id,
-            text=final_message
+            text=final_message_text
         )
+
     except Exception as e:
-        print(f"Error during file splitting or sending: {e}", exc_info=True)
-        await bot.send_message( 
+        print(f"Error during streamed generation/sending: {e}", exc_info=True)
+        await bot.send_message( # Send new message as original might be gone/edited
             chat_id=chat_id,
-            text=f"An error occurred while splitting/sending the file: {e}"
+            text=f"An error occurred during streamed generation/delivery: {e}"
         )
     finally:
+        # Ensure all temporary files are cleaned up in case of error
         for temp_file in temp_files_created:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
-                print(f"Cleaned up temporary chunk file: {temp_file}")
-        if os.path.exists(file_path): 
-            os.remove(file_path)
-            print(f"Cleaned up main generated file: {file_path}")
+                print(f"Cleaned up temporary chunk file in finally: {temp_file}")
+        await bot.send_message(chat_id=chat_id, text="Bot is ready for your next command!", reply_markup=REPLY_KEYBOARD_MARKUP)
 
 
 # --- Telegram Bot Handlers ---
@@ -292,42 +325,45 @@ async def handle_prefix_choice(update: Update, context: ContextTypes.DEFAULT_TYP
     callback_data = query.data
     pattern = context.user_data.get('pattern')
 
+    # If the final generate button is clicked, trigger the generation process
+    if callback_data == 'generate_final':
+        return await _execute_generation(update, context)
+
     # Handle prefix choice
     if callback_data.startswith('prefix_'):
         prefix_type_from_callback = callback_data.replace('prefix_', '')
         context.user_data['prefix_type'] = prefix_type_from_callback
-        await query.edit_message_text(f"Pattern: `{pattern}`\nPrefix type set to: `{prefix_type_from_callback}`\nChoose deduplication option or Generate:", parse_mode='Markdown', reply_markup=None)
+        # await query.edit_message_text(f"Pattern: `{pattern}`\nPrefix type set to: `{prefix_type_from_callback}`\nChoose deduplication option or Generate:", parse_mode='Markdown', reply_markup=None)
     
     # Handle deduplication choice
     elif callback_data.startswith('dedupe_'):
         dedupe_status = callback_data.replace('dedupe_', '') == 'true'
         context.user_data['deduplicate_case_insensitive'] = dedupe_status
-        dedupe_text = "Enabled" if dedupe_status else "Disabled"
-        await query.edit_message_text(f"Pattern: `{pattern}`\nDeduplication set to: `{dedupe_text}`\nChoose prefix type or Generate:", parse_mode='Markdown', reply_markup=None)
+        # dedupe_text = "Enabled" if dedupe_status else "Disabled"
+        # await query.edit_message_text(f"Pattern: `{pattern}`\nDeduplication set to: `{dedupe_text}`\nChoose prefix type or Generate:", parse_mode='Markdown', reply_markup=None)
     
     # Recreate the keyboard for next selection (or final generate)
     current_prefix_type = context.user_data.get('prefix_type', 'none')
     current_dedupe_status = context.user_data.get('deduplicate_case_insensitive', False)
     
     keyboard = [
+        [InlineKeyboardButton(f"Prefix: {'Line Number' if current_prefix_type == 'lineNumber' else ('Space' if current_prefix_type == 'space' else 'None')}", callback_data='dummy')], # Display current choice
         [InlineKeyboardButton("Line Number (1-N)", callback_data='prefix_lineNumber')],
         [InlineKeyboardButton("Space", callback_data='prefix_space')],
         [InlineKeyboardButton("None (No Prefix)", callback_data='prefix_none')],
+        [InlineKeyboardButton(f"Dedupe: {'Enabled' if current_dedupe_status else 'Disabled'}", callback_data='dummy')], # Display current choice
         [InlineKeyboardButton("Enable Deduplication", callback_data='dedupe_true')],
         [InlineKeyboardButton("Disable Deduplication", callback_data='dedupe_false')],
         [InlineKeyboardButton("Generate Pattern Now!", callback_data='generate_final')] # New button to trigger final generation
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.message.reply_text(
-        f"Current Settings: Prefix=`{current_prefix_type}`, Dedupe=`{'Enabled' if current_dedupe_status else 'Disabled'}`\nWhat's next?",
+    # Edit the current message with updated settings and keyboard
+    await query.edit_message_text(
+        f"Pattern: `{pattern}`\nCurrent Settings: Prefix=`{current_prefix_type}`, Dedupe=`{'Enabled' if current_dedupe_status else 'Disabled'}`\nSelect again or Generate:",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
-    
-    # If the final generate button is clicked, trigger the generation process
-    if callback_data == 'generate_final':
-        return await _execute_generation(update, context)
         
     return GET_PREFIX_CHOICE # Stay in this state to allow multiple choices
 
@@ -358,84 +394,16 @@ async def _execute_generation(update: Update, context: ContextTypes.DEFAULT_TYPE
             await context.bot.edit_message_text(chat_id=chat_id, message_id=initial_message.message_id, text="Error: Pattern yields 0 combinations. Please check your pattern.", reply_markup=None)
             return ConversationHandler.END
         
-        # Provide immediate feedback to the user via message edit
-        response_text = f"Generating ~{total_est_combinations:,} combinations"
-        if prefix_type_from_callback != 'none':
-            response_text += f" with prefix type '{prefix_type_from_callback}'"
-        if deduplicate_status:
-            response_text += " with deduplication enabled"
-        response_text += ". This might take a while for large patterns..."
-        await context.bot.edit_message_text(chat_id=chat_id, message_id=initial_message.message_id, text=response_text, reply_markup=None)
-        
-        # Define output file path on the server (actual name on disk)
-        sanitized_pattern_name = sanitize_filename(pattern)
-        raw_output_file_name = f"{sanitized_pattern_name}_{total_est_combinations}.txt" 
-        output_file_path = os.path.join(GENERATED_FILES_DIR, raw_output_file_name)
-
-        # Generate combinations and write directly to file
-        generated_count = generate_combinations(pattern, output_file_path, prefix_type_from_callback, deduplicate_case_insensitive=deduplicate_status)
-        actual_file_size = os.path.getsize(output_file_path)
-
-        # --- Live Preview (First few lines) ---
-        preview_lines_content = []
-        if actual_file_size > 0:
-            try:
-                with open(output_file_path, 'r', encoding='utf-8') as f_preview:
-                    for _ in range(PREVIEW_MESSAGE_LINES):
-                        line = f_preview.readline()
-                        if not line: break 
-                        preview_lines_content.append(line)
-                
-                preview_text = "".join(preview_lines_content)
-                if generated_count > PREVIEW_MESSAGE_LINES:
-                    preview_text += "...\n(Full file sending)"
-                
-                await context.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=initial_message.message_id, 
-                    text=f"Generated preview:\n```\n{preview_text}```", 
-                    parse_mode='Markdown'
-                )
-            except Exception as preview_e:
-                print(f"Error generating preview: {preview_e}")
-                await context.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=initial_message.message_id,
-                    text="Generated file, but preview failed. Sending file directly...",
-                    reply_markup=None
-                )
-        else:
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=initial_message.message_id,
-                text="Generated an empty file. Please check your pattern.",
-                reply_markup=None
-            )
-            if os.path.exists(output_file_path): os.remove(output_file_path)
-            await context.bot.send_message(chat_id=chat_id, text="Generated an empty file. Please try again.", reply_markup=REPLY_KEYBOARD_MARKUP)
-            return ConversationHandler.END 
-
-        # --- Send Actual File(s) ---
-        if actual_file_size > SAFE_CHUNK_SIZE_BYTES:
-            await split_and_send_file(
-                file_path=output_file_path,
-                chat_id=chat_id, 
-                bot=context.bot,
-                original_message_id=initial_message.message_id 
-            )
-        else:
-            formatted_output_file_name = f"{sanitized_pattern_name}_{generated_count:,}.txt" 
-            with open(output_file_path, 'rb') as f: 
-                await context.bot.send_document(
-                    chat_id=chat_id, 
-                    document=f, 
-                    filename=formatted_output_file_name, 
-                    caption=f"✅ Generated {generated_count:,} combinations for pattern '{pattern}'."
-                )
-            os.remove(output_file_path) 
-            print(f"Cleaned up file: {output_file_path}")
-            await initial_message.edit_text("Generation complete!", reply_markup=None)
-            await context.bot.send_message(chat_id=chat_id, text="You can generate more patterns or use /start!", reply_markup=REPLY_KEYBOARD_MARKUP)
+        # Call the new streaming function
+        await send_generated_stream(
+            pattern=pattern,
+            prefix_type=prefix_type_from_callback,
+            deduplicate_case_insensitive=deduplicate_status,
+            chat_id=chat_id,
+            bot=context.bot,
+            original_message_id=initial_message.message_id,
+            total_est_combinations=total_est_combinations
+        )
 
     except ValueError as ve:
         await context.bot.edit_message_text(chat_id=chat_id, message_id=initial_message.message_id, text=f"Pattern error: {ve}", reply_markup=None)
@@ -447,7 +415,6 @@ async def _execute_generation(update: Update, context: ContextTypes.DEFAULT_TYPE
         await context.bot.send_message(chat_id=chat_id, text="Generation failed. Please try again with /generate.", reply_markup=REPLY_KEYBOARD_MARKUP)
     
     return ConversationHandler.END 
-
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels the current conversation."""
@@ -510,10 +477,9 @@ def main():
             CommandHandler("cancel", cancel_conversation), 
             MessageHandler(filters.Regex("^Cancel$"), cancel_conversation), 
             CommandHandler("start", start_command), 
-            CommandHandler("help", help_command), # Handle /help as fallback
-            CommandHandler("about", about_command), # Handle /about as fallback
-            # Add a message handler to catch unexpected input and re-prompt or cancel
-            MessageHandler(filters.ALL, cancel_conversation) # Catches all other messages as implicit cancel
+            CommandHandler("help", help_command), 
+            CommandHandler("about", about_command), 
+            MessageHandler(filters.ALL, cancel_conversation) 
         ],
         per_user=True 
     )
