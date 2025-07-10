@@ -899,14 +899,13 @@ async def handle_bulk_list_file(update: Update, context: ContextTypes.DEFAULT_TY
 
     try:
         file_id = document.file_id
-        # Use get_file_and_download for direct download
-        # This is generally more robust than get_file followed by download_to_memory
         file_object = await context.bot.get_file(file_id)
         
-        # Create a temporary file to save the content
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as temp_file:
-            await file_object.download_to_stream(temp_file) # Download directly to stream
-            temp_file_path = temp_file.name
+        # Create a temporary file path
+        temp_file_path = tempfile.mktemp(suffix='.txt')
+
+        # Download the file to the temporary path using download_to_drive
+        await file_object.download_to_drive(temp_file_path)
 
         # Read content from the temporary file
         with open(temp_file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -986,8 +985,9 @@ async def send_download_file(update: Update, context: ContextTypes.DEFAULT_TYPE,
     file_name = ""
 
     # Determine the effective chat and message for replies/sends
-    chat_id_for_send = update.effective_chat.id if update.effective_chat else (update.callback_query.message.chat.id if update.callback_query and update.callback_query.message else None)
-    message_for_reply = update.effective_message if update.effective_message else (update.callback_query.message if update.callback_query and update.callback_query.message else None)
+    # This logic is now robust for both Message and CallbackQuery updates
+    chat_id_for_send = update.effective_chat.id
+    message_for_reply = update.effective_message
 
     if not chat_id_for_send or not message_for_reply:
         logger.error("Could not determine effective chat or message for sending download file.")
