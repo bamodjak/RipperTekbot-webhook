@@ -403,43 +403,46 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     lang = get_language(context)
     
+    # Use update.callback_query.message for effective_message in callback queries
+    effective_message_for_reply = query.message if query.message else update.effective_message
+
     if query.data == 'home':
-        await query.edit_message_text(
+        await effective_message_for_reply.edit_text(
             get_text('welcome', lang),
             reply_markup=create_main_keyboard(lang)
         )
         return INITIAL_MENU
     
     elif query.data == 'generate_username':
-        await query.edit_message_text(
+        await effective_message_for_reply.edit_text(
             get_text('how_many_names', lang),
             reply_markup=create_home_keyboard(lang)
         )
         return ASK_USERNAME_COUNT
     
     elif query.data == 'generate_word':
-        await query.edit_message_text(
+        await effective_message_for_reply.edit_text(
             get_text('word_length', lang), # Prompt for length or pattern
             reply_markup=create_home_keyboard(lang)
         )
         return ASK_WORD_LENGTH
     
     elif query.data == 'bulk_check':
-        await query.edit_message_text(
+        await effective_message_for_reply.edit_text(
             get_text('send_bulk_list', lang),
             reply_markup=create_home_keyboard(lang)
         )
         return BULK_LIST
     
     elif query.data == 'bot_search':
-        await query.edit_message_text(
+        await effective_message_for_reply.edit_text(
             get_text('bot_search_prompt', lang),
             reply_markup=create_home_keyboard(lang)
         )
         return ASK_BOT_SEARCH
     
     elif query.data == 'how_to':
-        await query.edit_message_text(
+        await effective_message_for_reply.edit_text(
             get_text('how_to_text', lang),
             reply_markup=create_home_keyboard(lang),
             parse_mode='Markdown'
@@ -447,7 +450,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return HOW_TO_INFO
     
     elif query.data == 'language':
-        await query.edit_message_text(
+        await effective_message_for_reply.edit_text(
             get_text('language_selection', lang),
             reply_markup=create_language_keyboard()
         )
@@ -456,7 +459,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif query.data.startswith('lang_'):
         new_lang = query.data.split('_')[1]
         context.user_data['language'] = new_lang
-        await query.edit_message_text(
+        await effective_message_for_reply.edit_text(
             get_text('language_set', new_lang),
             reply_markup=create_main_keyboard(new_lang)
         )
@@ -464,19 +467,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # --- Download Handlers ---
     elif query.data == 'download_usernames_all':
-        await send_download_file(context, 'usernames_all')
+        await send_download_file(update, context, 'usernames_all')
         return INITIAL_MENU
     elif query.data == 'download_usernames_available':
-        await send_download_file(context, 'usernames_available')
+        await send_download_file(update, context, 'usernames_available')
         return INITIAL_MENU
     elif query.data == 'download_words':
-        await send_download_file(context, 'words')
+        await send_download_file(update, context, 'words')
         return INITIAL_MENU
     elif query.data == 'download_bulk_all':
-        await send_download_file(context, 'bulk_all')
+        await send_download_file(update, context, 'bulk_all')
         return INITIAL_MENU
     elif query.data == 'download_bulk_available':
-        await send_download_file(context, 'bulk_available')
+        await send_download_file(update, context, 'bulk_available')
         return INITIAL_MENU
 
     return INITIAL_MENU # Fallback to initial menu if unexpected callback
@@ -976,11 +979,19 @@ async def handle_bot_search(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     return INITIAL_MENU
 
-async def send_download_file(context: ContextTypes.DEFAULT_TYPE, data_type: str) -> None:
+async def send_download_file(update: Update, context: ContextTypes.DEFAULT_TYPE, data_type: str) -> None:
     """Sends the requested data as a text file."""
     lang = get_language(context)
     file_content = ""
     file_name = ""
+
+    # Determine the effective chat and message for replies/sends
+    chat_id_for_send = update.effective_chat.id if update.effective_chat else (update.callback_query.message.chat.id if update.callback_query and update.callback_query.message else None)
+    message_for_reply = update.effective_message if update.effective_message else (update.callback_query.message if update.callback_query and update.callback_query.message else None)
+
+    if not chat_id_for_send or not message_for_reply:
+        logger.error("Could not determine effective chat or message for sending download file.")
+        return # Cannot proceed without a valid chat/message to reply to
 
     if data_type == 'usernames_all':
         data = context.user_data.get('last_generated_usernames_all')
@@ -1017,28 +1028,30 @@ async def send_download_file(context: ContextTypes.DEFAULT_TYPE, data_type: str)
             
             # Send the file
             with open(temp_file_path, 'rb') as f:
-                await context.bot.send_document(chat_id=context.effective_chat.id, document=InputFile(f, filename=file_name))
+                await context.bot.send_document(chat_id=chat_id_for_send, document=InputFile(f, filename=file_name))
             
-            await context.effective_message.reply_text(get_text('file_sent', lang), reply_markup=create_main_keyboard(lang))
+            await message_for_reply.reply_text(get_text('file_sent', lang), reply_markup=create_main_keyboard(lang))
 
         except Exception as e:
             logger.error(f"Error sending file: {e}", exc_info=True)
-            await context.effective_message.reply_text(get_text('error_occurred', lang, error=str(e)), reply_markup=create_main_keyboard(lang))
+            await message_for_reply.reply_text(get_text('error_occurred', lang, error=str(e)), reply_markup=create_main_keyboard(lang))
         finally:
             # Clean up the temporary file
             if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
                 os.remove(temp_file_path)
     else:
-        await context.effective_message.reply_text(get_text('no_data_to_download', lang), reply_markup=create_main_keyboard(lang))
+        await message_for_reply.reply_text(get_text('no_data_to_download', lang), reply_markup=create_main_keyboard(lang))
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel conversation."""
     lang = get_language(context)
-    await update.message.reply_text(
-        get_text('operation_cancelled', lang),
-        reply_markup=create_main_keyboard(lang)
-    )
+    # Use update.effective_message for replies in cancel handler
+    if update.effective_message:
+        await update.effective_message.reply_text(
+            get_text('operation_cancelled', lang),
+            reply_markup=create_main_keyboard(lang)
+        )
     return INITIAL_MENU
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1046,11 +1059,19 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error(f"Exception while handling an update: {context.error}", exc_info=True)
     
     # Attempt to send a generic error message to the user
-    if isinstance(update, Update) and update.effective_message:
+    # Determine the effective message to reply to
+    effective_message_for_reply = None
+    if isinstance(update, Update):
+        if update.effective_message:
+            effective_message_for_reply = update.effective_message
+        elif update.callback_query and update.callback_query.message:
+            effective_message_for_reply = update.callback_query.message
+
+    if effective_message_for_reply:
         lang = get_language(context)
         error_message = get_text('error_occurred', lang, error="Please try again or contact support.")
         try:
-            await update.effective_message.reply_text(
+            await effective_message_for_reply.reply_text(
                 error_message,
                 reply_markup=create_main_keyboard(lang)
             )
@@ -1113,8 +1134,7 @@ def main():
             ],
             BULK_LIST: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bulk_list_text), # Handles text input
-                # Corrected filter for .txt files: filters.Document.ALL and check inside handler
-                MessageHandler(filters.Document.ALL, handle_bulk_list_file), # Handles .txt file upload
+                MessageHandler(filters.Document.ALL, handle_bulk_list_file), # Handles any document, then check .txt inside
                 CallbackQueryHandler(button_handler, pattern='^home$')
             ],
             ASK_BOT_SEARCH: [
