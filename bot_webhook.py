@@ -32,20 +32,32 @@ from telegram.ext import (
 
 # --- Configuration ---
 # IMPORTANT: Get your bot token from BotFather.
-# Set TELEGRAM_TOKEN, WEBHOOK_URL, and PORT as environment variables on your hosting platform (e.g., Railway).
+# Set TELEGRAM_TOKEN, WEBHOOK_URL, PORT, and ADMIN_ID as environment variables on your hosting platform (e.g., Railway).
 # Example for Railway:
 # TELEGRAM_TOKEN = your_actual_bot_token_here
 # WEBHOOK_URL = https://your-railway-project-domain.railway.app
 # PORT = 8000 (or 8443, or whatever port Railway assigns/expects for your app)
+# ADMIN_ID = your_numeric_telegram_user_id (e.g., 123456789)
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT = int(os.getenv("PORT", 8000)) # Default to 8000 if PORT env var is not set
+ADMIN_ID = os.getenv("ADMIN_ID") # Read admin ID from environment variable
 
 if not TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN environment variable not set! Please set it on Railway.")
 if not WEBHOOK_URL:
     raise RuntimeError("WEBHOOK_URL environment variable not set! Please set it on Railway.")
+if not ADMIN_ID:
+    logger.warning("ADMIN_ID environment variable is not set. Admin features will be unavailable.")
+    ADMIN_ID = None # Ensure it's None if not set, for checks later
+else:
+    try:
+        ADMIN_ID = int(ADMIN_ID) # Convert to int for comparison
+    except ValueError:
+        logger.error(f"ADMIN_ID environment variable '{os.getenv('ADMIN_ID')}' is not a valid numeric ID. Admin features will be unavailable.")
+        ADMIN_ID = None
+
 
 # States for ConversationHandler
 (INITIAL_MENU, ASK_USERNAME_COUNT, ASK_PATTERN, ASK_DELAY, BULK_LIST,
@@ -140,7 +152,7 @@ translations = {
 • Get detailed simulated results
 
 🤖 **Bot Search:**
-• Search for bot usernames (must end with 'bot')
+• Search for bot usernames (I will add 'bot' if needed)
 • Simulate availability for bot names
 
 💡 **Tips:**
@@ -152,11 +164,11 @@ translations = {
         'word_count': "🔢 How many words to generate? (1-1,000,000)",
         'invalid_word_count': "❌ Please enter a number between 1 and 1,000,000.",
         'generated_words': "📚 Generated Words:",
-        'bot_search_prompt': "🤖 Enter bot name to search (without @, must end with 'bot'):\nExample: mycoolbot\n\n(Note: Availability check is simulated)",
+        'bot_search_prompt': "🤖 Enter bot name to search (without @). I will automatically add 'bot' to the end if it's not already there.\nExample: mycoolbot or just mycool\n\n(Note: Availability check is simulated)",
         'bot_search_results': "🤖 Simulated Bot Search Results for '{name}':",
         'bot_available': "✅ @{name} is simulated available!",
         'bot_taken': "❌ @{name} is simulated taken.",
-        'invalid_bot_name': "❌ Invalid bot name. Must be 5-32 characters, alphanumeric + underscores, and end with 'bot'.",
+        'invalid_bot_name': "❌ Invalid bot name. The final name (including 'bot') must be 5-32 characters, alphanumeric + underscores.",
         'rate_limit_warning': "⚠️ Simulated rate limit reached. Pausing for {seconds} seconds...",
         'timeout_error': "⏰ Simulated request timed out. Please try again.",
         'network_error': "🌐 Simulated network error. Please check your connection.",
@@ -219,7 +231,7 @@ translations = {
 • احصل على نتائج مفصلة (محاكاة)
 
 🤖 **البحث عن البوت:**
-• ابحث عن أسماء البوت (يجب أن تنتهي بـ 'bot')
+• ابحث عن أسماء البوت (سأضيف 'bot' إذا لزم الأمر)
 • محاكاة توفر أسماء البوت
 
 💡 **نصائح:**
@@ -231,23 +243,16 @@ translations = {
         'word_count': "🔢 كم كلمة تريد إنشاؤها؟ (1-1,000,000)",
         'invalid_word_count': "❌ أدخل رقماً بين 1 و 1,000,000.",
         'generated_words': "📚 الكلمات المولدة:",
-        'bot_search_prompt': "🤖 أدخل اسم البوت للبحث (بدون @، يجب أن ينتهي بـ 'bot'):\nمثال: mycoolbot\n\n(ملاحظة: فحص التوفر محاكى)",
+        'bot_search_prompt': "🤖 أدخل اسم البوت للبحث (بدون @). سأضيف تلقائياً 'bot' إلى النهاية إذا لم يكن موجوداً.\nمثال: mycoolbot أو mycool فقط\n\n(ملاحظة: فحص التوفر محاكى)",
         'bot_search_results': "🤖 نتائج البحث عن البوت '{name}' (محاكاة):",
         'bot_available': "✅ @{name} متاح (محاكاة)!",
         'bot_taken': "❌ @{name} مأخوذ (محاكاة).",
-        'invalid_bot_name': "❌ اسم بوت غير صحيح. يجب أن يكون 5-32 حرف، أحرف وأرقام + شرطات سفلية، ويجب أن ينتهي بـ 'bot'.",
+        'invalid_bot_name': "❌ اسم بوت غير صحيح. يجب أن يكون الاسم النهائي (بما في ذلك 'bot') من 5 إلى 32 حرفاً، ويتكون من أحرف وأرقام وشرطات سفلية فقط.",
         'rate_limit_warning': "⚠️ تم الوصول لحد المعدل (محاكاة). توقف لـ {seconds} ثانية...",
         'timeout_error': "⏰ انتهت مهلة الطلب (محاكاة). حاول مرة أخرى.",
         'network_error': "🌐 خطأ في الشبكة (محاكاة). تحقق من اتصالك.",
         'error_occurred': "❌ حدث خطأ: {error}",
-        'operation_cancelled': "تم إلغاء العملية. العودة إلى القائمة الرئيسية.",
-        'download_all_usernames_btn': "⬇️ تحميل جميع أسماء المستخدمين",
-        'download_available_usernames_btn': "⬇️ تحميل أسماء المستخدمين المتاحة",
-        'download_words_btn': "⬇️ تحميل الكلمات",
-        'download_bulk_all_btn': "⬇️ تحميل جميع المفحوصة",
-        'download_bulk_available_btn': "⬇️ تحميل المتاحة فقط",
-        'file_sent': "✅ تم إرسال الملف بنجاح!",
-        'no_data_to_download': "❌ لا توجد بيانات للتحميل. يرجى التوليد أو الفحص أولاً."
+        'operation_cancelled': "تم إلغاء العملية. العودة إلى القائمة الرئيسية."
     }
 }
 
@@ -318,13 +323,6 @@ class SimulatedTelegramUsernameChecker:
         is_available = username.lower() not in self.taken_usernames
         logger.info(f"Simulated check for '{username}': {'Available' if is_available else 'Taken'}")
         return is_available
-
-    async def check_bot_username(self, botname: str, delay: float = 0.1) -> bool:
-        """Simulates checking if a bot username is available."""
-        # Ensure botname ends with 'bot' for simulation consistency, as per Telegram rules
-        if not botname.lower().endswith('bot'):
-            botname += 'bot'
-        return await self.check_username(botname, delay)
 
     def is_valid_username_format(self, username: str) -> bool:
         """Validate username format (basic check)."""
@@ -881,6 +879,14 @@ async def handle_bulk_list_file(update: Update, context: ContextTypes.DEFAULT_TY
     lang = get_language(context)
     document = update.message.document
 
+    # Check if a document is actually present and has a file name
+    if not document or not document.file_name:
+        await update.message.reply_text(
+            get_text('invalid_bulk_list', lang),
+            reply_markup=create_home_keyboard(lang)
+        )
+        return BULK_LIST
+
     if not document.file_name.lower().endswith('.txt'):
         await update.message.reply_text(
             get_text('invalid_bulk_list', lang),
@@ -890,11 +896,13 @@ async def handle_bulk_list_file(update: Update, context: ContextTypes.DEFAULT_TY
 
     try:
         file_id = document.file_id
-        new_file = await context.bot.get_file(file_id)
+        # Use get_file_and_download for direct download
+        # This is generally more robust than get_file followed by download_to_memory
+        file_object = await context.bot.get_file(file_id)
         
-        # Download the file to a temporary location
+        # Create a temporary file to save the content
         with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as temp_file:
-            await new_file.download_to_memory(out=temp_file)
+            await file_object.download_to_stream(temp_file) # Download directly to stream
             temp_file_path = temp_file.name
 
         # Read content from the temporary file
@@ -923,15 +931,17 @@ async def handle_bulk_list_file(update: Update, context: ContextTypes.DEFAULT_TY
 async def handle_bot_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle bot username search."""
     lang = get_language(context)
-    bot_name_input = update.message.text.strip().replace('@', '').lower()
+    user_input = update.message.text.strip().replace('@', '').lower()
+    
+    # Auto-add 'bot' suffix if not present
+    bot_name_to_check = user_input
+    if not bot_name_to_check.endswith('bot'):
+        bot_name_to_check += 'bot'
     
     checker = SimulatedTelegramUsernameChecker()
     
-    # Basic validation for bot name format
-    # Bot names must be 5-32 chars, alphanumeric + underscores, and end with 'bot'
-    if not (MIN_USERNAME_LENGTH <= len(bot_name_input) <= MAX_USERNAME_LENGTH) or \
-       not re.match(r'^[a-zA-Z0-9_]+$', bot_name_input) or \
-       not bot_name_input.endswith('bot'):
+    # Validate the final formatted bot name
+    if not checker.is_valid_username_format(bot_name_to_check):
         await update.message.reply_text(
             get_text('invalid_bot_name', lang),
             reply_markup=create_home_keyboard(lang)
@@ -939,26 +949,26 @@ async def handle_bot_search(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ASK_BOT_SEARCH
     
     status_msg = await update.message.reply_text(
-        get_text('bot_search_results', lang, name=bot_name_input),
+        get_text('bot_search_results', lang, name=bot_name_to_check),
         reply_markup=create_home_keyboard(lang)
     )
     
     try:
-        # Pass the name without 'bot' suffix to the checker, it will add it internally for consistency
-        is_available = await checker.check_bot_username(bot_name_input.replace('bot', ''), delay=0.5) # Small delay for bot search
+        # Use the general check_username for bot names after formatting
+        is_available = await checker.check_username(bot_name_to_check, delay=0.5) # Small delay for bot search
         
         if is_available:
-            result_text = get_text('bot_available', lang, name=bot_name_input)
+            result_text = get_text('bot_available', lang, name=bot_name_to_check)
         else:
-            result_text = get_text('bot_taken', lang, name=bot_name_input)
+            result_text = get_text('bot_taken', lang, name=bot_name_to_check)
         
         await status_msg.edit_text(
-            f"{get_text('bot_search_results', lang, name=bot_name_input)}\n\n{result_text}",
+            f"{get_text('bot_search_results', lang, name=bot_name_to_check)}\n\n{result_text}",
             reply_markup=create_main_keyboard(lang)
         )
         
     except Exception as e:
-        logger.error(f"Error during simulated bot check for {bot_name_input}: {e}")
+        logger.error(f"Error during simulated bot check for {bot_name_to_check}: {e}")
         await status_msg.edit_text(
             get_text('error_occurred', lang, error=str(e)),
             reply_markup=create_main_keyboard(lang)
@@ -1061,6 +1071,10 @@ def main():
         print("\nERROR: WEBHOOK_URL is not set! Please set WEBHOOK_URL environment variable.")
         print("This should be the public URL of your deployed application (e.g., from Railway).")
         return
+    
+    if ADMIN_ID is None:
+        print("\nWARNING: ADMIN_ID environment variable is not set or is invalid. Admin features (if any) will be unavailable.")
+
 
     application = ApplicationBuilder().token(TOKEN).build()
     
@@ -1099,7 +1113,8 @@ def main():
             ],
             BULK_LIST: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bulk_list_text), # Handles text input
-                MessageHandler(filters.Document.TEXT & filters.Document.FILE_EXTENSION("txt"), handle_bulk_list_file), # Handles .txt file upload
+                # Corrected filter for .txt files: filters.Document.ALL and check inside handler
+                MessageHandler(filters.Document.ALL, handle_bulk_list_file), # Handles .txt file upload
                 CallbackQueryHandler(button_handler, pattern='^home$')
             ],
             ASK_BOT_SEARCH: [
